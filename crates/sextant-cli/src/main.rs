@@ -76,6 +76,14 @@ enum Cmd {
         #[command(subcommand)]
         cmd: RulesCmd,
     },
+    /// Write a `.sextant/` directory with a default config and one
+    /// sample rule. Idempotent: skips files that already exist unless
+    /// `--force` is passed.
+    Init {
+        /// Overwrite existing files instead of skipping them.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -147,5 +155,6 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             RulesCmd::Explain { id } => commands::rules::explain(&id),
             RulesCmd::Check { path } => commands::rules::check(&path),
         },
+        Cmd::Init { force } => commands::init::run(force),
     }
 }

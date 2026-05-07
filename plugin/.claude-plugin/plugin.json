@@ -1,0 +1,49 @@
+{
+  "name": "sextant",
+  "version": "0.1.0",
+  "description": "Code-quality grader for AI agents. Runs Sextant after edits, surfaces findings to the agent so it self-corrects, and optionally blocks turn-end on a RequestChanges verdict.",
+  "author": {
+    "name": "Kyle Bastien"
+  },
+  "homepage": "https://github.com/kylebastien/sextant-mcp",
+  "license": "MIT OR Apache-2.0",
+  "mcpServers": {
+    "sextant": {
+      "command": "sextant-mcp",
+      "args": []
+    }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-edit-grade.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop-enforce-grade.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

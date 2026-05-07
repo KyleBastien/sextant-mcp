@@ -114,7 +114,10 @@ fn pr_mode_report_json_writes_pr_report_shape() {
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(v.get("delta").is_some(), "got: {body}");
     assert!(v.get("verdict").is_some(), "got: {body}");
-    assert!(v["delta"]["new_counts"].get("error").is_some(), "got: {body}");
+    assert!(
+        v["delta"]["new_counts"].get("error").is_some(),
+        "got: {body}"
+    );
 }
 
 #[test]
