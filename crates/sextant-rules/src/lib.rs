@@ -140,3 +140,45 @@ fn rule_applies_to_file(ev: &dyn Evaluator, file: &SourceFile) -> bool {
         None => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sextant_core::EvalContext;
+
+    #[test]
+    fn load_picks_up_built_ins_with_default_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config::default();
+        let set = RuleSet::load(dir.path(), &cfg).unwrap();
+        let ids: Vec<_> = set
+            .evaluators()
+            .iter()
+            .map(|e| e.rule().id.clone())
+            .collect();
+        assert!(ids.contains(&"builtin.size.file-length".to_string()));
+        assert!(ids.contains(&"builtin.tests.pub-fn-untested".to_string()));
+    }
+
+    #[test]
+    fn grade_files_runs_built_in_size_rule() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config {
+            size: sextant_config::SizeRuleConfig {
+                file_length_warn: 5,
+                file_length_error: 10,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let set = RuleSet::load(dir.path(), &cfg).unwrap();
+        let file = SourceFile::new(dir.path().join("a.rs"), "x\n".repeat(20));
+        let ctx = EvalContext {
+            repo_root: dir.path(),
+        };
+        let findings = set.grade_files(&[file], &ctx);
+        assert!(findings
+            .iter()
+            .any(|f| f.rule_id == "builtin.size.file-length"));
+    }
+}

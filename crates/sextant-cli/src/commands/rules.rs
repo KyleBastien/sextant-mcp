@@ -6,7 +6,7 @@ use sextant_core::RuleSource;
 use sextant_engine::{explain_rule, list_rules};
 use sextant_rules::{parse_rule_md, EvaluatorSpec};
 
-pub fn list() -> Result<ExitCode> {
+pub(crate) fn list() -> Result<ExitCode> {
     let cwd = std::env::current_dir().context("getting current dir")?;
     let rules = list_rules(&cwd).context("loading rules")?;
     for r in rules {
@@ -22,7 +22,7 @@ pub fn list() -> Result<ExitCode> {
     Ok(ExitCode::from(0))
 }
 
-pub fn explain(id: &str) -> Result<ExitCode> {
+pub(crate) fn explain(id: &str) -> Result<ExitCode> {
     let cwd = std::env::current_dir().context("getting current dir")?;
     let Some(r) = explain_rule(&cwd, id).context("loading rules")? else {
         eprintln!("error: no rule with id `{id}`");
@@ -47,7 +47,7 @@ pub fn explain(id: &str) -> Result<ExitCode> {
     Ok(ExitCode::from(0))
 }
 
-pub fn check(path: &Path) -> Result<ExitCode> {
+pub(crate) fn check(path: &Path) -> Result<ExitCode> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     match parse_rule_md(&text, RuleSource::Repo, Some(path.to_path_buf())) {

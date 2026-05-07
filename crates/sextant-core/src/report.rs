@@ -78,3 +78,60 @@ fn summarize(findings: &[Finding], counts: &SeverityCounts, verdict: &Verdict) -
     }
     s
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn finding(sev: Severity) -> Finding {
+        Finding::new("r", sev, "a.rs", "m")
+    }
+
+    #[test]
+    fn from_findings_tallies_each_severity() {
+        let fs = vec![
+            finding(Severity::Info),
+            finding(Severity::Warn),
+            finding(Severity::Warn),
+            finding(Severity::Error),
+        ];
+        let c = SeverityCounts::from_findings(&fs);
+        assert_eq!(c.info, 1);
+        assert_eq!(c.warn, 2);
+        assert_eq!(c.error, 1);
+        assert_eq!(c.total(), 4);
+    }
+
+    #[test]
+    fn build_sorts_findings_severity_desc() {
+        let fs = vec![
+            finding(Severity::Info),
+            finding(Severity::Error),
+            finding(Severity::Warn),
+        ];
+        let r = Report::build(fs, Verdict::Approve);
+        assert_eq!(r.findings[0].severity, Severity::Error);
+        assert_eq!(r.findings[1].severity, Severity::Warn);
+        assert_eq!(r.findings[2].severity, Severity::Info);
+    }
+
+    #[test]
+    fn build_summary_mentions_verdict_and_counts() {
+        let fs = vec![finding(Severity::Error), finding(Severity::Warn)];
+        let r = Report::build(fs, Verdict::Approve);
+        assert!(r.summary.contains("1 errors"));
+        assert!(r.summary.contains("1 warnings"));
+        assert!(r.summary.contains("APPROVE"));
+    }
+
+    #[test]
+    fn build_summary_marks_request_changes() {
+        let r = Report::build(
+            vec![finding(Severity::Error)],
+            Verdict::RequestChanges {
+                reasons: vec!["x".into()],
+            },
+        );
+        assert!(r.summary.contains("REQUEST_CHANGES"));
+    }
+}

@@ -60,3 +60,43 @@ impl Finding {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn severity_as_str_round_trips() {
+        assert_eq!(Severity::Info.as_str(), "info");
+        assert_eq!(Severity::Warn.as_str(), "warn");
+        assert_eq!(Severity::Error.as_str(), "error");
+    }
+
+    #[test]
+    fn severity_orders_info_lt_warn_lt_error() {
+        assert!(Severity::Info < Severity::Warn);
+        assert!(Severity::Warn < Severity::Error);
+    }
+
+    #[test]
+    fn new_starts_unspanned() {
+        let f = Finding::new("r.id", Severity::Warn, "a.rs", "msg");
+        assert_eq!(f.rule_id, "r.id");
+        assert_eq!(f.severity, Severity::Warn);
+        assert!(f.line.is_none() && f.end_line.is_none());
+    }
+
+    #[test]
+    fn at_line_sets_only_start() {
+        let f = Finding::new("r", Severity::Info, "a.rs", "m").at_line(7);
+        assert_eq!(f.line, Some(7));
+        assert!(f.end_line.is_none());
+    }
+
+    #[test]
+    fn spanning_sets_both_endpoints() {
+        let f = Finding::new("r", Severity::Info, "a.rs", "m").spanning(3, 11);
+        assert_eq!(f.line, Some(3));
+        assert_eq!(f.end_line, Some(11));
+    }
+}

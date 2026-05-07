@@ -73,4 +73,24 @@ mod tests {
         );
         assert_eq!(SourceFile::new("a.unknown", "").language_hint(), None);
     }
+
+    #[test]
+    fn extension_returns_lowercase_suffix() {
+        assert_eq!(SourceFile::new("a.rs", "").extension(), Some("rs"));
+        assert_eq!(SourceFile::new("noext", "").extension(), None);
+    }
+
+    #[test]
+    fn relative_to_strips_root_prefix() {
+        let f = SourceFile::new("/tmp/proj/src/lib.rs", "");
+        let r = f.relative_to(Path::new("/tmp/proj"));
+        assert_eq!(r, PathBuf::from("src/lib.rs"));
+    }
+
+    #[test]
+    fn relative_to_returns_full_path_when_outside_root() {
+        let f = SourceFile::new("/elsewhere/x.rs", "");
+        let r = f.relative_to(Path::new("/tmp/proj"));
+        assert_eq!(r, PathBuf::from("/elsewhere/x.rs"));
+    }
 }

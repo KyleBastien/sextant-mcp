@@ -22,7 +22,7 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn is_notification(&self) -> bool {
+    pub(crate) fn is_notification(&self) -> bool {
         self.id.is_none()
     }
 }
@@ -54,7 +54,7 @@ pub mod codes {
 }
 
 /// Build a successful response wire-frame (a single JSON line).
-pub fn success(id: Value, result: Value) -> String {
+pub(crate) fn success(id: Value, result: Value) -> String {
     let resp = ResponseSuccess {
         jsonrpc: "2.0",
         id,
@@ -64,7 +64,7 @@ pub fn success(id: Value, result: Value) -> String {
 }
 
 /// Build an error response wire-frame.
-pub fn error(id: Value, code: i32, message: impl Into<String>) -> String {
+pub(crate) fn error(id: Value, code: i32, message: impl Into<String>) -> String {
     let resp = ResponseError {
         jsonrpc: "2.0",
         id,

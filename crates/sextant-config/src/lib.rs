@@ -203,6 +203,13 @@ mod tests {
     }
 
     #[test]
+    fn load_or_default_returns_default_for_nonexistent_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config::load_or_default(&dir.path().join("nope.toml")).unwrap();
+        assert_eq!(cfg.size.file_length_warn, 400);
+    }
+
+    #[test]
     fn parses_overrides() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".sextant").join("config.toml");
