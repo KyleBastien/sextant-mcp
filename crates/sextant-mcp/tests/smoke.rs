@@ -74,17 +74,16 @@ impl Drop for Server {
 }
 
 fn initialize(server: &mut Server) {
-    server.send(json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
+    let resp = rpc(
+        server,
+        1,
+        "initialize",
+        json!({
             "protocolVersion": "2025-06-18",
             "capabilities": {},
             "clientInfo": { "name": "smoke-test", "version": "0" }
-        }
-    }));
-    let resp = server.recv();
+        }),
+    );
     assert_eq!(resp["id"], 1);
     let result = &resp["result"];
     assert_eq!(result["serverInfo"]["name"], "sextant-mcp");
@@ -97,98 +96,98 @@ fn initialize(server: &mut Server) {
     }));
 }
 
-#[test]
-fn initialize_and_tools_list() {
-    let dir = tempdir().unwrap();
-    let mut server = Server::spawn(dir.path());
-
-    initialize(&mut server);
-
+fn rpc(server: &mut Server, id: u64, method: &str, params: Value) -> Value {
     server.send(json!({
         "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/list",
-        "params": {}
+        "id": id,
+        "method": method,
+        "params": params,
     }));
-    let resp = server.recv();
-    assert_eq!(resp["id"], 2);
-    let tools = resp["result"]["tools"].as_array().expect("tools array");
-    let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert!(names.contains(&"grade_diff"), "got: {names:?}");
-    assert!(names.contains(&"grade_files"), "got: {names:?}");
-    assert!(names.contains(&"list_rules"), "got: {names:?}");
-    assert!(names.contains(&"explain_rule"), "got: {names:?}");
-    assert!(names.contains(&"get_config"), "got: {names:?}");
+    server.recv()
+}
+
+fn call_tool(server: &mut Server, id: u64, name: &str, args: Value) -> Value {
+    rpc(
+        server,
+        id,
+        "tools/call",
+        json!({ "name": name, "arguments": args }),
+    )
+}
+
+/// Spin up a server in a fresh tempdir, run `initialize`, hand the live
+/// server to `body`, then drop. Most smoke tests just need this shape.
+fn with_server<R>(body: impl FnOnce(&mut Server) -> R) -> R {
+    let dir = tempdir().unwrap();
+    let mut server = Server::spawn(dir.path());
+    initialize(&mut server);
+    body(&mut server)
+}
+
+fn extract_text(resp: &Value) -> &str {
+    resp["result"]["content"][0]["text"]
+        .as_str()
+        .expect("text content")
+}
+
+#[test]
+fn initialize_and_tools_list() {
+    with_server(|server| {
+        let resp = rpc(server, 2, "tools/list", json!({}));
+        assert_eq!(resp["id"], 2);
+        let tools = resp["result"]["tools"].as_array().expect("tools array");
+        let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        for expected in [
+            "grade_diff",
+            "grade_files",
+            "list_rules",
+            "explain_rule",
+            "get_config",
+        ] {
+            assert!(names.contains(&expected), "missing {expected}: {names:?}");
+        }
+    });
 }
 
 #[test]
 fn list_rules_tool_returns_builtins() {
-    let dir = tempdir().unwrap();
-    let mut server = Server::spawn(dir.path());
-    initialize(&mut server);
-
-    server.send(json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/call",
-        "params": {
-            "name": "list_rules",
-            "arguments": {}
-        }
-    }));
-    let resp = server.recv();
-    let content = resp["result"]["content"][0]["text"]
-        .as_str()
-        .expect("text content");
-    let rules: Value = serde_json::from_str(content).expect("rules JSON parses");
-    let arr = rules.as_array().expect("rules array");
-    let ids: Vec<&str> = arr.iter().map(|r| r["id"].as_str().unwrap()).collect();
-    assert!(ids.contains(&"builtin.size.fn-length"), "got: {ids:?}");
+    with_server(|server| {
+        let resp = call_tool(server, 2, "list_rules", json!({}));
+        let rules: Value = serde_json::from_str(extract_text(&resp)).expect("rules JSON parses");
+        let ids: Vec<&str> = rules
+            .as_array()
+            .expect("rules array")
+            .iter()
+            .map(|r| r["id"].as_str().unwrap())
+            .collect();
+        assert!(ids.contains(&"builtin.size.fn-length"), "got: {ids:?}");
+    });
 }
 
 #[test]
 fn explain_rule_tool_returns_markdown() {
-    let dir = tempdir().unwrap();
-    let mut server = Server::spawn(dir.path());
-    initialize(&mut server);
-
-    server.send(json!({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "tools/call",
-        "params": {
-            "name": "explain_rule",
-            "arguments": { "id": "builtin.size.fn-length" }
-        }
-    }));
-    let resp = server.recv();
-    let text = resp["result"]["content"][0]["text"]
-        .as_str()
-        .expect("text content");
-    assert!(text.contains("Function length"), "got:\n{text}");
-    assert!(
-        text.contains("# "),
-        "expected markdown heading; got:\n{text}"
-    );
+    with_server(|server| {
+        let resp = call_tool(
+            server,
+            3,
+            "explain_rule",
+            json!({ "id": "builtin.size.fn-length" }),
+        );
+        let text = extract_text(&resp);
+        assert!(text.contains("Function length"), "got:\n{text}");
+        assert!(
+            text.contains("# "),
+            "expected markdown heading; got:\n{text}"
+        );
+    });
 }
 
 #[test]
 fn explain_rule_unknown_id_returns_is_error() {
-    let dir = tempdir().unwrap();
-    let mut server = Server::spawn(dir.path());
-    initialize(&mut server);
-
-    server.send(json!({
-        "jsonrpc": "2.0",
-        "id": 4,
-        "method": "tools/call",
-        "params": {
-            "name": "explain_rule",
-            "arguments": { "id": "no.such.rule" }
-        }
-    }));
-    let resp = server.recv();
-    assert_eq!(resp["result"]["isError"], true);
+    with_server(|server| {
+        let resp = call_tool(server, 4, "explain_rule", json!({ "id": "no.such.rule" }));
+        assert_eq!(resp["result"]["isError"], true);
+    });
 }
 
 #[test]
@@ -202,19 +201,8 @@ fn grade_files_tool_returns_report() {
     let mut server = Server::spawn(root);
     initialize(&mut server);
 
-    server.send(json!({
-        "jsonrpc": "2.0",
-        "id": 5,
-        "method": "tools/call",
-        "params": {
-            "name": "grade_files",
-            "arguments": {}
-        }
-    }));
-    let resp = server.recv();
-    let text = resp["result"]["content"][0]["text"]
-        .as_str()
-        .expect("text content");
+    let resp = call_tool(&mut server, 5, "grade_files", json!({}));
+    let text = extract_text(&resp);
     let report: Value = serde_json::from_str(text).expect("report JSON parses");
     assert!(report.get("findings").is_some(), "got:\n{text}");
     assert!(report.get("verdict").is_some());
@@ -223,16 +211,8 @@ fn grade_files_tool_returns_report() {
 
 #[test]
 fn unknown_method_returns_method_not_found() {
-    let dir = tempdir().unwrap();
-    let mut server = Server::spawn(dir.path());
-    initialize(&mut server);
-
-    server.send(json!({
-        "jsonrpc": "2.0",
-        "id": 6,
-        "method": "nope/missing",
-        "params": {}
-    }));
-    let resp = server.recv();
-    assert_eq!(resp["error"]["code"], -32601);
+    with_server(|server| {
+        let resp = rpc(server, 6, "nope/missing", json!({}));
+        assert_eq!(resp["error"]["code"], -32601);
+    });
 }

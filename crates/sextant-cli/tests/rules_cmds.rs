@@ -49,12 +49,23 @@ fn rules_explain_unknown_id_errors() {
         .stderr(str::contains("no rule with id"));
 }
 
+/// Run `sextant rules check` against an inline rule file. The tempdir is
+/// kept alive until `.assert()` finishes — by then the command has run.
+fn run_rules_check(rule_md: &str) -> (tempfile::TempDir, assert_cmd::assert::Assert) {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("rule.md");
+    std::fs::write(&path, rule_md).unwrap();
+    let assert = Command::cargo_bin("sextant")
+        .unwrap()
+        .args(["rules", "check", path.to_str().unwrap()])
+        .current_dir(dir.path())
+        .assert();
+    (dir, assert)
+}
+
 #[test]
 fn rules_check_validates_rule_md() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("my-rule.md");
-    std::fs::write(
-        &path,
+    let (_dir, assert) = run_rules_check(
         r#"---
 id: project.no-todo
 name: "No TODO comments"
@@ -68,14 +79,8 @@ evaluator:
 
 Detail body.
 "#,
-    )
-    .unwrap();
-
-    Command::cargo_bin("sextant")
-        .unwrap()
-        .args(["rules", "check", path.to_str().unwrap()])
-        .current_dir(dir.path())
-        .assert()
+    );
+    assert
         .success()
         .stdout(str::contains("OK: project.no-todo"))
         .stdout(str::contains("evaluator=regex"));
@@ -83,25 +88,14 @@ Detail body.
 
 #[test]
 fn rules_check_rejects_invalid_frontmatter() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("bad.md");
-    std::fs::write(
-        &path,
+    let (_dir, assert) = run_rules_check(
         r#"---
 id: a
 # missing required fields
 ---
 "#,
-    )
-    .unwrap();
-
-    Command::cargo_bin("sextant")
-        .unwrap()
-        .args(["rules", "check", path.to_str().unwrap()])
-        .current_dir(dir.path())
-        .assert()
-        .code(2)
-        .stderr(str::contains("frontmatter"));
+    );
+    assert.code(2).stderr(str::contains("frontmatter"));
 }
 
 /// End-to-end: a repo-local regex rule fires on its target pattern and
