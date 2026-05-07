@@ -86,17 +86,16 @@ evaluator: { type: builtin, name: pub_fn_untested }
         .unwrap()
     }
 
-    fn ctx_root() -> std::path::PathBuf {
-        std::env::current_dir().unwrap()
+    fn evaluate(path: &str, src: &str) -> Vec<Finding> {
+        let rule = PubFnUntestedRule::from_parsed(parsed_for_test());
+        let file = SourceFile::new(path, src);
+        let root = std::env::current_dir().unwrap();
+        rule.evaluate_file(&file, &EvalContext { repo_root: &root })
     }
 
     #[test]
     fn flags_pub_fn_with_no_test() {
-        let rule = PubFnUntestedRule::from_parsed(parsed_for_test());
-        let src = "pub fn lonely() {}\n";
-        let file = SourceFile::new("a.rs", src);
-        let root = ctx_root();
-        let f = rule.evaluate_file(&file, &EvalContext { repo_root: &root });
+        let f = evaluate("a.rs", "pub fn lonely() {}\n");
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].severity, Severity::Info);
         assert!(f[0].message.contains("lonely"));
@@ -104,7 +103,6 @@ evaluator: { type: builtin, name: pub_fn_untested }
 
     #[test]
     fn quiet_when_test_mentions_fn() {
-        let rule = PubFnUntestedRule::from_parsed(parsed_for_test());
         let src = r#"
 pub fn add(a: i32, b: i32) -> i32 { a + b }
 
@@ -115,33 +113,21 @@ mod tests {
     fn add_works() { assert_eq!(add(1, 2), 3); }
 }
 "#;
-        let file = SourceFile::new("a.rs", src);
-        let root = ctx_root();
-        let f = rule.evaluate_file(&file, &EvalContext { repo_root: &root });
-        assert!(f.is_empty(), "{f:?}");
+        assert!(evaluate("a.rs", src).is_empty());
     }
 
     #[test]
     fn ignores_non_rust_files() {
-        let rule = PubFnUntestedRule::from_parsed(parsed_for_test());
-        let file = SourceFile::new("a.py", "def f(): pass\n");
-        let root = ctx_root();
-        let f = rule.evaluate_file(&file, &EvalContext { repo_root: &root });
-        assert!(f.is_empty());
+        assert!(evaluate("a.py", "def f(): pass\n").is_empty());
     }
 
     #[test]
     fn ignores_pub_crate() {
-        let rule = PubFnUntestedRule::from_parsed(parsed_for_test());
-        let file = SourceFile::new("a.rs", "pub(crate) fn internal() {}\n");
-        let root = ctx_root();
-        let f = rule.evaluate_file(&file, &EvalContext { repo_root: &root });
-        assert!(f.is_empty(), "{f:?}");
+        assert!(evaluate("a.rs", "pub(crate) fn internal() {}\n").is_empty());
     }
 
     #[test]
     fn ignores_pub_fns_in_cfg_test_mod() {
-        let rule = PubFnUntestedRule::from_parsed(parsed_for_test());
         let src = r#"
 #[cfg(test)]
 mod tests {
@@ -150,15 +136,11 @@ mod tests {
     fn t() { helper(); }
 }
 "#;
-        let file = SourceFile::new("a.rs", src);
-        let root = ctx_root();
-        let f = rule.evaluate_file(&file, &EvalContext { repo_root: &root });
-        assert!(f.is_empty(), "{f:?}");
+        assert!(evaluate("a.rs", src).is_empty());
     }
 
     #[test]
     fn flags_each_untested_fn() {
-        let rule = PubFnUntestedRule::from_parsed(parsed_for_test());
         let src = r#"
 pub fn one() {}
 pub fn two() {}
@@ -171,9 +153,7 @@ mod tests {
     fn t() { two(); }
 }
 "#;
-        let file = SourceFile::new("a.rs", src);
-        let root = ctx_root();
-        let f = rule.evaluate_file(&file, &EvalContext { repo_root: &root });
+        let f = evaluate("a.rs", src);
         let names: Vec<_> = f
             .iter()
             .filter_map(|x| x.message.split('`').nth(1))

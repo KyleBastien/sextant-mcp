@@ -176,11 +176,19 @@ mod tests {
     use super::*;
     use crate::parser::parse;
 
+    fn complexities(src: &str, lang: Language) -> Vec<FunctionComplexity> {
+        function_complexity(&parse(src, lang).unwrap()).unwrap()
+    }
+
+    fn assert_branchy(cs: &[FunctionComplexity]) {
+        assert_eq!(cs.len(), 1);
+        assert!(cs[0].cyclomatic >= 5, "got {}", cs[0].cyclomatic);
+        assert!(cs[0].max_nesting >= 2, "got {}", cs[0].max_nesting);
+    }
+
     #[test]
     fn rust_simple_function_is_one() {
-        let src = "fn straight() { let x = 1; let y = 2; }\n";
-        let parsed = parse(src, Language::Rust).unwrap();
-        let cs = function_complexity(&parsed).unwrap();
+        let cs = complexities("fn straight() { let x = 1; let y = 2; }\n", Language::Rust);
         assert_eq!(cs.len(), 1);
         assert_eq!(cs[0].cyclomatic, 1, "{cs:?}");
         assert_eq!(cs[0].max_nesting, 0);
@@ -203,11 +211,7 @@ fn f(x: i32) -> i32 {
     }
 }
 "#;
-        let parsed = parse(src, Language::Rust).unwrap();
-        let cs = function_complexity(&parsed).unwrap();
-        assert_eq!(cs.len(), 1);
-        assert!(cs[0].cyclomatic >= 5, "got {}", cs[0].cyclomatic);
-        assert!(cs[0].max_nesting >= 2, "got {}", cs[0].max_nesting);
+        assert_branchy(&complexities(src, Language::Rust));
     }
 
     #[test]
@@ -226,10 +230,6 @@ def f(x):
             return 0
     return 0
 "#;
-        let parsed = parse(src, Language::Python).unwrap();
-        let cs = function_complexity(&parsed).unwrap();
-        assert_eq!(cs.len(), 1);
-        assert!(cs[0].cyclomatic >= 5, "got {}", cs[0].cyclomatic);
-        assert!(cs[0].max_nesting >= 2, "got {}", cs[0].max_nesting);
+        assert_branchy(&complexities(src, Language::Python));
     }
 }

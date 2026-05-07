@@ -74,11 +74,6 @@ mod tests {
     use super::*;
     use crate::loader::parse_rule_md;
     use sextant_core::RuleSource;
-    use std::path::Path;
-
-    fn ctx<'a>(root: &'a Path) -> EvalContext<'a> {
-        EvalContext { repo_root: root }
-    }
 
     fn parsed_for_test() -> ParsedRule {
         parse_rule_md(
@@ -97,47 +92,34 @@ evaluator: { type: builtin, name: file_length }
         .unwrap()
     }
 
-    #[test]
-    fn under_threshold_is_clean() {
+    fn evaluate(warn: u32, error: u32, lines: usize) -> Vec<Finding> {
         let cfg = SizeRuleConfig {
-            file_length_warn: 100,
-            file_length_error: 200,
+            file_length_warn: warn,
+            file_length_error: error,
             ..Default::default()
         };
         let rule = FileLengthRule::from_parsed(parsed_for_test(), &cfg);
-        let file = SourceFile::new("a.rs", "x\n".repeat(50));
+        let file = SourceFile::new("a.rs", "x\n".repeat(lines));
         let root = std::env::current_dir().unwrap();
-        let findings = rule.evaluate_file(&file, &ctx(&root));
-        assert!(findings.is_empty());
+        rule.evaluate_file(&file, &EvalContext { repo_root: &root })
+    }
+
+    #[test]
+    fn under_threshold_is_clean() {
+        assert!(evaluate(100, 200, 50).is_empty());
     }
 
     #[test]
     fn warn_at_warn_threshold() {
-        let cfg = SizeRuleConfig {
-            file_length_warn: 10,
-            file_length_error: 20,
-            ..Default::default()
-        };
-        let rule = FileLengthRule::from_parsed(parsed_for_test(), &cfg);
-        let file = SourceFile::new("a.rs", "x\n".repeat(15));
-        let root = std::env::current_dir().unwrap();
-        let findings = rule.evaluate_file(&file, &ctx(&root));
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].severity, Severity::Warn);
+        let f = evaluate(10, 20, 15);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].severity, Severity::Warn);
     }
 
     #[test]
     fn error_at_error_threshold() {
-        let cfg = SizeRuleConfig {
-            file_length_warn: 10,
-            file_length_error: 20,
-            ..Default::default()
-        };
-        let rule = FileLengthRule::from_parsed(parsed_for_test(), &cfg);
-        let file = SourceFile::new("a.rs", "x\n".repeat(25));
-        let root = std::env::current_dir().unwrap();
-        let findings = rule.evaluate_file(&file, &ctx(&root));
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].severity, Severity::Error);
+        let f = evaluate(10, 20, 25);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].severity, Severity::Error);
     }
 }

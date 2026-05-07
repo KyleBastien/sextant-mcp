@@ -102,11 +102,16 @@ mod tests {
     use super::*;
     use crate::parser::parse;
 
+    fn ranges(src: &str, lang: Language) -> Vec<FunctionRange> {
+        function_ranges(&parse(src, lang).unwrap()).unwrap()
+    }
+
     #[test]
     fn rust_basic_two_top_level_fns() {
-        let src = "fn one() {}\n\nfn two(a: i32, b: i32) -> i32 {\n    a + b\n}\n";
-        let parsed = parse(src, Language::Rust).unwrap();
-        let fns = function_ranges(&parsed).unwrap();
+        let fns = ranges(
+            "fn one() {}\n\nfn two(a: i32, b: i32) -> i32 {\n    a + b\n}\n",
+            Language::Rust,
+        );
         assert_eq!(fns.len(), 2);
         assert_eq!(fns[0].name, "one");
         assert_eq!(fns[1].name, "two");
@@ -115,9 +120,10 @@ mod tests {
 
     #[test]
     fn methods_count_self_as_a_param() {
-        let src = "impl S {\n    fn m(&self, x: i32) {}\n    fn n(&mut self) {}\n}\n";
-        let parsed = parse(src, Language::Rust).unwrap();
-        let fns = function_ranges(&parsed).unwrap();
+        let fns = ranges(
+            "impl S {\n    fn m(&self, x: i32) {}\n    fn n(&mut self) {}\n}\n",
+            Language::Rust,
+        );
         assert_eq!(fns.len(), 2);
         assert_eq!(fns[0].param_count, 2);
         assert_eq!(fns[1].param_count, 1);
@@ -125,18 +131,20 @@ mod tests {
 
     #[test]
     fn skips_trait_signatures() {
-        let src = "trait T {\n    fn declared(&self);\n}\n\nfn impl_fn() {}\n";
-        let parsed = parse(src, Language::Rust).unwrap();
-        let fns = function_ranges(&parsed).unwrap();
+        let fns = ranges(
+            "trait T {\n    fn declared(&self);\n}\n\nfn impl_fn() {}\n",
+            Language::Rust,
+        );
         assert_eq!(fns.len(), 1);
         assert_eq!(fns[0].name, "impl_fn");
     }
 
     #[test]
     fn python_basic_two_top_level_fns() {
-        let src = "def alpha():\n    pass\n\ndef beta(a, b, c):\n    return a + b + c\n";
-        let parsed = parse(src, Language::Python).unwrap();
-        let fns = function_ranges(&parsed).unwrap();
+        let fns = ranges(
+            "def alpha():\n    pass\n\ndef beta(a, b, c):\n    return a + b + c\n",
+            Language::Python,
+        );
         assert_eq!(fns.len(), 2);
         assert_eq!(fns[0].name, "alpha");
         assert_eq!(fns[1].name, "beta");
