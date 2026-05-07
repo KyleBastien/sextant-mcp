@@ -56,6 +56,10 @@ impl From<&VerdictSection> for VerdictThresholds {
 pub struct SizeRuleConfig {
     pub file_length_warn: u32,
     pub file_length_error: u32,
+    pub fn_length_warn: u32,
+    pub fn_length_error: u32,
+    pub param_count_warn: u32,
+    pub param_count_error: u32,
 }
 
 impl Default for SizeRuleConfig {
@@ -63,6 +67,10 @@ impl Default for SizeRuleConfig {
         Self {
             file_length_warn: 400,
             file_length_error: 800,
+            fn_length_warn: 60,
+            fn_length_error: 120,
+            param_count_warn: 6,
+            param_count_error: 10,
         }
     }
 }

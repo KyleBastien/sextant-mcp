@@ -80,6 +80,7 @@ mod tests {
         let cfg = SizeRuleConfig {
             file_length_warn: 100,
             file_length_error: 200,
+            ..Default::default()
         };
         let rule = FileLengthRule::from_config(&cfg);
         let file = SourceFile::new("a.rs", "x\n".repeat(50));
@@ -93,6 +94,7 @@ mod tests {
         let cfg = SizeRuleConfig {
             file_length_warn: 10,
             file_length_error: 20,
+            ..Default::default()
         };
         let rule = FileLengthRule::from_config(&cfg);
         let file = SourceFile::new("a.rs", "x\n".repeat(15));
@@ -107,6 +109,7 @@ mod tests {
         let cfg = SizeRuleConfig {
             file_length_warn: 10,
             file_length_error: 20,
+            ..Default::default()
         };
         let rule = FileLengthRule::from_config(&cfg);
         let file = SourceFile::new("a.rs", "x\n".repeat(25));

@@ -1,16 +1,18 @@
 [package]
-name = "sextant-rules"
+name = "sextant-diff"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Built-in rule evaluators for Sextant"
+description = "Git diff acquisition for Sextant"
 
 [dependencies]
-sextant-core = { workspace = true }
-sextant-config = { workspace = true }
-sextant-lang = { workspace = true }
+git2 = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

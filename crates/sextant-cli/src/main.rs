@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -5,7 +6,8 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use ignore::WalkBuilder;
 use sextant_config::Config;
-use sextant_core::{EvalContext, Report, SourceFile, Verdict, VerdictThresholds};
+use sextant_core::{EvalContext, Finding, Report, SourceFile, Verdict, VerdictThresholds};
+use sextant_diff::{compute, BaseSpec, DiffSet, HeadSpec};
 use sextant_rules::RuleSet;
 
 #[derive(Debug, Parser)]
@@ -21,10 +23,24 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Cmd {
-    /// Grade files (whole-file mode).
+    /// Grade files. Defaults to whole-file mode; pass `--diff` to grade
+    /// only changed lines against a base ref.
     Grade {
-        /// Paths to grade. Defaults to the current directory.
+        /// Paths to grade. Ignored when `--diff` is set. Defaults to the
+        /// current directory.
         paths: Vec<PathBuf>,
+        /// Switch to diff mode: only findings on changed lines are reported.
+        #[arg(long)]
+        diff: bool,
+        /// Base ref. Default: merge-base with origin/main, falling back to HEAD~1.
+        #[arg(long)]
+        base: Option<String>,
+        /// Head ref. Default: working tree (with index applied).
+        #[arg(long)]
+        head: Option<String>,
+        /// Force diff against the working tree even when --head is set.
+        #[arg(long, conflicts_with = "head")]
+        working_tree: bool,
         /// Output format.
         #[arg(long, value_enum, default_value_t = Format::Human)]
         format: Format,
@@ -81,35 +97,69 @@ fn run(cli: Cli) -> Result<ExitCode> {
     match cli.cmd {
         Cmd::Grade {
             paths,
+            diff,
+            base,
+            head,
+            working_tree,
             format,
             fail_on,
-        } => cmd_grade(paths, format, fail_on),
+        } => cmd_grade(GradeArgs {
+            paths,
+            diff,
+            base,
+            head,
+            working_tree,
+            format,
+            fail_on,
+        }),
         Cmd::Rules {
             cmd: RulesCmd::List,
         } => cmd_rules_list(),
     }
 }
 
-fn cmd_grade(paths: Vec<PathBuf>, format: Format, fail_on: FailOn) -> Result<ExitCode> {
+struct GradeArgs {
+    paths: Vec<PathBuf>,
+    diff: bool,
+    base: Option<String>,
+    head: Option<String>,
+    working_tree: bool,
+    format: Format,
+    fail_on: FailOn,
+}
+
+fn cmd_grade(args: GradeArgs) -> Result<ExitCode> {
     let cwd = std::env::current_dir().context("getting current dir")?;
     let config = Config::from_repo_root(&cwd).context("loading config")?;
     let ruleset = RuleSet::builtin(&config);
-
-    let targets = if paths.is_empty() {
-        vec![cwd.clone()]
-    } else {
-        paths
-    };
-
-    let files = collect_source_files(&cwd, &targets)?;
     let ctx = EvalContext { repo_root: &cwd };
-    let findings = ruleset.grade_files(&files, &ctx);
+
+    let findings = if args.diff {
+        let diff = run_diff(
+            &cwd,
+            args.base.as_deref(),
+            args.head.as_deref(),
+            args.working_tree,
+        )
+        .context("computing diff")?;
+        let files = source_files_from_diff(&cwd, &diff);
+        let raw = ruleset.grade_files(&files, &ctx);
+        filter_to_diff(raw, &diff)
+    } else {
+        let targets = if args.paths.is_empty() {
+            vec![cwd.clone()]
+        } else {
+            args.paths.clone()
+        };
+        let files = collect_source_files(&cwd, &targets)?;
+        ruleset.grade_files(&files, &ctx)
+    };
 
     let thresholds: VerdictThresholds = (&config.verdict).into();
     let verdict = thresholds.evaluate(&findings);
     let report = Report::build(findings, verdict);
 
-    match format {
+    match args.format {
         Format::Human => print_human(&report),
         Format::Json => {
             let json = serde_json::to_string_pretty(&report)?;
@@ -117,7 +167,7 @@ fn cmd_grade(paths: Vec<PathBuf>, format: Format, fail_on: FailOn) -> Result<Exi
         }
     }
 
-    Ok(exit_for(&report, fail_on))
+    Ok(exit_for(&report, args.fail_on))
 }
 
 fn cmd_rules_list() -> Result<ExitCode> {
@@ -135,6 +185,64 @@ fn cmd_rules_list() -> Result<ExitCode> {
         );
     }
     Ok(ExitCode::from(0))
+}
+
+fn run_diff(
+    repo_root: &Path,
+    base: Option<&str>,
+    head: Option<&str>,
+    force_working_tree: bool,
+) -> Result<DiffSet> {
+    let base_spec = match base {
+        Some(s) => BaseSpec::Ref(s.to_string()),
+        None => BaseSpec::Auto,
+    };
+    let head_spec = if force_working_tree {
+        HeadSpec::WorkingTree
+    } else {
+        match head {
+            Some(s) => HeadSpec::Ref(s.to_string()),
+            None => HeadSpec::WorkingTree,
+        }
+    };
+    Ok(compute(repo_root, &base_spec, &head_spec)?)
+}
+
+fn source_files_from_diff(repo_root: &Path, diff: &DiffSet) -> Vec<SourceFile> {
+    let mut out = Vec::new();
+    for f in &diff.files {
+        let Some(contents) = f.head_contents.as_ref() else {
+            continue;
+        };
+        out.push(SourceFile::new(repo_root.join(&f.path), contents.clone()));
+    }
+    out
+}
+
+/// Drop any finding whose head-side line range is entirely outside the diff.
+/// Findings without a line (e.g. file-scoped) are kept iff the file is in
+/// the diff at all.
+fn filter_to_diff(findings: Vec<Finding>, diff: &DiffSet) -> Vec<Finding> {
+    let mut by_path: std::collections::HashMap<PathBuf, &BTreeSet<u32>> =
+        std::collections::HashMap::new();
+    for f in &diff.files {
+        by_path.insert(f.path.clone(), &f.changed_lines);
+    }
+    findings
+        .into_iter()
+        .filter(|f| {
+            let Some(changed) = by_path.get(&f.path) else {
+                return false;
+            };
+            match (f.line, f.end_line) {
+                (None, _) => !changed.is_empty(),
+                (Some(start), end) => {
+                    let end = end.unwrap_or(start);
+                    (start..=end).any(|ln| changed.contains(&ln))
+                }
+            }
+        })
+        .collect()
 }
 
 fn collect_source_files(root: &Path, targets: &[PathBuf]) -> Result<Vec<SourceFile>> {
