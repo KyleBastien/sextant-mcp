@@ -1,7 +1,8 @@
 //! Cyclomatic and max-nesting rules built on `sextant_lang::function_complexity`.
 //!
-//! Both share the same evaluation skeleton — parse, walk, compare each
-//! function's metric against a threshold — so we use one inner helper.
+//! Both rules share the same evaluation skeleton — parse, walk, compare each
+//! function's metric against thresholds — and only differ in which metric
+//! they read. They're a single `ComplexityRule` parameterized by `Metric`.
 
 use sextant_config::ComplexityRuleConfig;
 use sextant_core::{EvalContext, Evaluator, Finding, Rule, Severity, SourceFile};
@@ -11,7 +12,7 @@ use crate::file_length::rule_from_parsed;
 use crate::loader::ParsedRule;
 
 #[derive(Debug, Clone, Copy)]
-enum Metric {
+pub enum Metric {
     Cyclomatic,
     Nesting,
 }
@@ -31,56 +32,34 @@ impl Metric {
     }
 }
 
-pub struct CyclomaticRule {
+pub struct ComplexityRule {
     rule: Rule,
     warn: u32,
     error: u32,
+    metric: Metric,
 }
 
-impl CyclomaticRule {
-    pub fn from_parsed(parsed: ParsedRule, cfg: &ComplexityRuleConfig) -> Self {
+impl ComplexityRule {
+    pub fn cyclomatic(parsed: ParsedRule, cfg: &ComplexityRuleConfig) -> Self {
         Self {
             rule: rule_from_parsed(parsed),
             warn: cfg.cyclomatic_warn,
             error: cfg.cyclomatic_error,
+            metric: Metric::Cyclomatic,
         }
     }
-}
 
-impl Evaluator for CyclomaticRule {
-    fn rule(&self) -> &Rule {
-        &self.rule
-    }
-
-    fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
-        evaluate(EvalArgs {
-            rule: &self.rule,
-            metric: Metric::Cyclomatic,
-            warn: self.warn,
-            error: self.error,
-            file,
-            ctx,
-        })
-    }
-}
-
-pub struct NestingRule {
-    rule: Rule,
-    warn: u32,
-    error: u32,
-}
-
-impl NestingRule {
-    pub fn from_parsed(parsed: ParsedRule, cfg: &ComplexityRuleConfig) -> Self {
+    pub fn nesting(parsed: ParsedRule, cfg: &ComplexityRuleConfig) -> Self {
         Self {
             rule: rule_from_parsed(parsed),
             warn: cfg.nesting_warn,
             error: cfg.nesting_error,
+            metric: Metric::Nesting,
         }
     }
 }
 
-impl Evaluator for NestingRule {
+impl Evaluator for ComplexityRule {
     fn rule(&self) -> &Rule {
         &self.rule
     }
@@ -88,7 +67,7 @@ impl Evaluator for NestingRule {
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
         evaluate(EvalArgs {
             rule: &self.rule,
-            metric: Metric::Nesting,
+            metric: self.metric,
             warn: self.warn,
             error: self.error,
             file,
@@ -191,6 +170,10 @@ evaluator: { type: builtin, name: nesting }
         .unwrap()
     }
 
+    fn root_ctx() -> std::path::PathBuf {
+        std::env::current_dir().unwrap()
+    }
+
     #[test]
     fn cyclomatic_flags_branchy_function() {
         let cfg = ComplexityRuleConfig {
@@ -198,16 +181,11 @@ evaluator: { type: builtin, name: nesting }
             cyclomatic_error: 5,
             ..Default::default()
         };
-        let rule = CyclomaticRule::from_parsed(cyclomatic_parsed(), &cfg);
+        let rule = ComplexityRule::cyclomatic(cyclomatic_parsed(), &cfg);
         let src = "fn f(x: i32) -> i32 { if x > 0 { 1 } else if x < 0 { -1 } else { 0 } }\n";
         let file = SourceFile::new("a.rs", src);
-        let root = std::env::current_dir().unwrap();
-        let f = rule.evaluate_file(
-            &file,
-            &EvalContext {
-                repo_root: root.as_path(),
-            },
-        );
+        let root = root_ctx();
+        let f = rule.evaluate_file(&file, &EvalContext { repo_root: &root });
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].severity, Severity::Warn);
     }
@@ -215,15 +193,10 @@ evaluator: { type: builtin, name: nesting }
     #[test]
     fn cyclomatic_clean_when_simple() {
         let cfg = ComplexityRuleConfig::default();
-        let rule = CyclomaticRule::from_parsed(cyclomatic_parsed(), &cfg);
+        let rule = ComplexityRule::cyclomatic(cyclomatic_parsed(), &cfg);
         let file = SourceFile::new("a.rs", "fn ok() { let x = 1; }\n");
-        let root = std::env::current_dir().unwrap();
-        let f = rule.evaluate_file(
-            &file,
-            &EvalContext {
-                repo_root: root.as_path(),
-            },
-        );
+        let root = root_ctx();
+        let f = rule.evaluate_file(&file, &EvalContext { repo_root: &root });
         assert!(f.is_empty());
     }
 
@@ -234,7 +207,7 @@ evaluator: { type: builtin, name: nesting }
             nesting_error: 3,
             ..Default::default()
         };
-        let rule = NestingRule::from_parsed(nesting_parsed(), &cfg);
+        let rule = ComplexityRule::nesting(nesting_parsed(), &cfg);
         let src = r#"
 fn f() {
     if true {
@@ -247,13 +220,8 @@ fn f() {
 }
 "#;
         let file = SourceFile::new("a.rs", src);
-        let root = std::env::current_dir().unwrap();
-        let f = rule.evaluate_file(
-            &file,
-            &EvalContext {
-                repo_root: root.as_path(),
-            },
-        );
+        let root = root_ctx();
+        let f = rule.evaluate_file(&file, &EvalContext { repo_root: &root });
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].severity, Severity::Error);
     }
@@ -265,16 +233,11 @@ fn f() {
             cyclomatic_error: 5,
             ..Default::default()
         };
-        let rule = CyclomaticRule::from_parsed(cyclomatic_parsed(), &cfg);
+        let rule = ComplexityRule::cyclomatic(cyclomatic_parsed(), &cfg);
         let src = "def f(x):\n    if x > 0:\n        return 1\n    elif x < 0:\n        return -1\n    else:\n        return 0\n";
         let file = SourceFile::new("a.py", src);
-        let root = std::env::current_dir().unwrap();
-        let f = rule.evaluate_file(
-            &file,
-            &EvalContext {
-                repo_root: root.as_path(),
-            },
-        );
+        let root = root_ctx();
+        let f = rule.evaluate_file(&file, &EvalContext { repo_root: &root });
         assert_eq!(f.len(), 1, "{f:?}");
     }
 }
