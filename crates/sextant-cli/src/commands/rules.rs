@@ -66,6 +66,10 @@ pub(crate) fn check(path: &Path) -> Result<ExitCode> {
                 EvaluatorSpec::Regex { pattern, .. } => {
                     println!("  evaluator=regex pattern={pattern:?}");
                 }
+                EvaluatorSpec::Llm { model, .. } => {
+                    let m = model.as_deref().unwrap_or("<from config>");
+                    println!("  evaluator=llm model={m}");
+                }
             }
             Ok(ExitCode::from(0))
         }

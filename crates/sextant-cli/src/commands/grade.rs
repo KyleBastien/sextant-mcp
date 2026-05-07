@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::ValueEnum;
 use sextant_core::{Report, Verdict};
-use sextant_engine::{grade, DiffOptions, GradeMode};
+use sextant_engine::{grade_with, DiffOptions, GradeMode, GradeOptions};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Format {
@@ -27,6 +27,7 @@ pub struct GradeArgs {
     pub working_tree: bool,
     pub format: Format,
     pub fail_on: FailOn,
+    pub no_llm: bool,
 }
 
 pub(crate) fn run(args: GradeArgs) -> Result<ExitCode> {
@@ -40,7 +41,14 @@ pub(crate) fn run(args: GradeArgs) -> Result<ExitCode> {
     } else {
         GradeMode::Files { paths: args.paths }
     };
-    let report = grade(&cwd, mode).context("grading")?;
+    let report = grade_with(
+        &cwd,
+        mode,
+        GradeOptions {
+            no_llm: args.no_llm,
+        },
+    )
+    .context("grading")?;
 
     match args.format {
         Format::Human => print_human(&report),

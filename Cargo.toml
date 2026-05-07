@@ -6,6 +6,7 @@ members = [
     "crates/sextant-config",
     "crates/sextant-diff",
     "crates/sextant-lang",
+    "crates/sextant-judge",
     "crates/sextant-engine",
     "crates/sextant-cli",
     "crates/sextant-mcp",
@@ -25,6 +26,7 @@ sextant-config = { path = "crates/sextant-config", version = "0.1.0" }
 sextant-diff = { path = "crates/sextant-diff", version = "0.1.0" }
 sextant-lang = { path = "crates/sextant-lang", version = "0.1.0" }
 sextant-engine = { path = "crates/sextant-engine", version = "0.1.0" }
+sextant-judge = { path = "crates/sextant-judge", version = "0.1.0" }
 
 anyhow = "1"
 thiserror = "1"
@@ -43,6 +45,10 @@ tree-sitter-python = "0.21"
 gray_matter = { version = "0.2", default-features = false, features = ["yaml"] }
 rust-embed = "8"
 regex = "1"
+async-trait = "0.1"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+blake3 = "1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
