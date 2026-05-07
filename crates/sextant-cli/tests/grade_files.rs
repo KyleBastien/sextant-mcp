@@ -57,6 +57,26 @@ fn grade_clean_repo_returns_zero() {
 }
 
 #[test]
+fn excluded_paths_produce_no_findings() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+
+    // Default config — Cargo.lock is in the default exclude list.
+    // Use a file long enough to trip the default file-length error threshold
+    // if it weren't excluded.
+    std::fs::write(root.join("Cargo.lock"), "x\n".repeat(900)).unwrap();
+    std::fs::write(root.join("ok.rs"), "fn ok() {}\n").unwrap();
+
+    Command::cargo_bin("sextant")
+        .unwrap()
+        .args(["grade", "--format", "human"])
+        .current_dir(root)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("No findings"));
+}
+
+#[test]
 fn rules_list_prints_builtin() {
     let dir = tempdir().unwrap();
     let output = Command::cargo_bin("sextant")

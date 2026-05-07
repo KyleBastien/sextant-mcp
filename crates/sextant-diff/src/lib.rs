@@ -153,6 +153,26 @@ pub fn compute(repo_root: &Path, base: &BaseSpec, head: &HeadSpec) -> DiffResult
     })
 }
 
+fn delta_path(delta: &git2::DiffDelta<'_>) -> PathBuf {
+    delta
+        .new_file()
+        .path()
+        .map(Path::to_path_buf)
+        .or_else(|| delta.old_file().path().map(Path::to_path_buf))
+        .unwrap_or_default()
+}
+
+fn change_kind(status: git2::Delta) -> ChangeKind {
+    match status {
+        git2::Delta::Added | git2::Delta::Untracked => ChangeKind::Added,
+        git2::Delta::Modified | git2::Delta::Typechange => ChangeKind::Modified,
+        git2::Delta::Deleted => ChangeKind::Deleted,
+        git2::Delta::Renamed => ChangeKind::Renamed,
+        git2::Delta::Copied => ChangeKind::Copied,
+        _ => ChangeKind::Other,
+    }
+}
+
 fn collect_files(
     repo: &Repository,
     repo_root: &Path,
@@ -164,24 +184,9 @@ fn collect_files(
 
     diff.foreach(
         &mut |delta, _progress| {
-            let kind = match delta.status() {
-                git2::Delta::Added | git2::Delta::Untracked => ChangeKind::Added,
-                git2::Delta::Modified | git2::Delta::Typechange => ChangeKind::Modified,
-                git2::Delta::Deleted => ChangeKind::Deleted,
-                git2::Delta::Renamed => ChangeKind::Renamed,
-                git2::Delta::Copied => ChangeKind::Copied,
-                _ => ChangeKind::Other,
-            };
-            let path = delta
-                .new_file()
-                .path()
-                .map(Path::to_path_buf)
-                .or_else(|| delta.old_file().path().map(Path::to_path_buf))
-                .unwrap_or_default();
-
             acc.borrow_mut().push(DiffFile {
-                path,
-                status: kind,
+                path: delta_path(&delta),
+                status: change_kind(delta.status()),
                 changed_lines: BTreeSet::new(),
                 head_contents: None,
             });
@@ -189,26 +194,16 @@ fn collect_files(
         },
         None,
         Some(&mut |delta, hunk| {
-            // Record the hunk's new-side line range against the matching file.
-            let path = delta
-                .new_file()
-                .path()
-                .map(Path::to_path_buf)
-                .or_else(|| delta.old_file().path().map(Path::to_path_buf))
-                .unwrap_or_default();
-
+            let path = delta_path(&delta);
             let start = hunk.new_start();
             let lines = hunk.new_lines();
+            if lines == 0 {
+                return true;
+            }
+            let end = start + lines - 1;
             let mut acc = acc.borrow_mut();
             if let Some(f) = acc.iter_mut().find(|f| f.path == path) {
-                if lines == 0 {
-                    // pure deletion in the head; nothing to mark.
-                } else {
-                    let end = start + lines - 1;
-                    for ln in start..=end {
-                        f.changed_lines.insert(ln);
-                    }
-                }
+                f.changed_lines.extend(start..=end);
             }
             true
         }),
@@ -216,15 +211,12 @@ fn collect_files(
     )?;
 
     let mut files = acc.into_inner();
-
-    // Hydrate head contents.
     for f in files.iter_mut() {
         if matches!(f.status, ChangeKind::Deleted) {
             continue;
         }
         f.head_contents = read_head(repo, repo_root, &f.path, head)?;
     }
-
     files.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(files)
 }

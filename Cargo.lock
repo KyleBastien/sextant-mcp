@@ -848,6 +848,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "clap",
+ "globset",
  "ignore",
  "insta",
  "predicates",
@@ -866,6 +867,7 @@ dependencies = [
 name = "sextant-config"
 version = "0.1.0"
 dependencies = [
+ "globset",
  "serde",
  "sextant-core",
  "tempfile",

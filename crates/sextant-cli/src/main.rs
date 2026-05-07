@@ -4,6 +4,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
+use globset::GlobSet;
 use ignore::WalkBuilder;
 use sextant_config::Config;
 use sextant_core::{EvalContext, Finding, Report, SourceFile, Verdict, VerdictThresholds};
@@ -131,6 +132,10 @@ struct GradeArgs {
 fn cmd_grade(args: GradeArgs) -> Result<ExitCode> {
     let cwd = std::env::current_dir().context("getting current dir")?;
     let config = Config::from_repo_root(&cwd).context("loading config")?;
+    let exclude = config
+        .paths
+        .matcher()
+        .context("building path-exclude matcher")?;
     let ruleset = RuleSet::builtin(&config);
     let ctx = EvalContext { repo_root: &cwd };
 
@@ -142,7 +147,7 @@ fn cmd_grade(args: GradeArgs) -> Result<ExitCode> {
             args.working_tree,
         )
         .context("computing diff")?;
-        let files = source_files_from_diff(&cwd, &diff);
+        let files = source_files_from_diff(&cwd, &diff, &exclude);
         let raw = ruleset.grade_files(&files, &ctx);
         filter_to_diff(raw, &diff)
     } else {
@@ -151,7 +156,7 @@ fn cmd_grade(args: GradeArgs) -> Result<ExitCode> {
         } else {
             args.paths.clone()
         };
-        let files = collect_source_files(&cwd, &targets)?;
+        let files = collect_source_files(&cwd, &targets, &exclude)?;
         ruleset.grade_files(&files, &ctx)
     };
 
@@ -208,9 +213,12 @@ fn run_diff(
     Ok(compute(repo_root, &base_spec, &head_spec)?)
 }
 
-fn source_files_from_diff(repo_root: &Path, diff: &DiffSet) -> Vec<SourceFile> {
+fn source_files_from_diff(repo_root: &Path, diff: &DiffSet, exclude: &GlobSet) -> Vec<SourceFile> {
     let mut out = Vec::new();
     for f in &diff.files {
+        if exclude.is_match(&f.path) {
+            continue;
+        }
         let Some(contents) = f.head_contents.as_ref() else {
             continue;
         };
@@ -245,7 +253,11 @@ fn filter_to_diff(findings: Vec<Finding>, diff: &DiffSet) -> Vec<Finding> {
         .collect()
 }
 
-fn collect_source_files(root: &Path, targets: &[PathBuf]) -> Result<Vec<SourceFile>> {
+fn collect_source_files(
+    root: &Path,
+    targets: &[PathBuf],
+    exclude: &GlobSet,
+) -> Result<Vec<SourceFile>> {
     let mut out = Vec::new();
     for target in targets {
         let walker = WalkBuilder::new(target).standard_filters(true).build();
@@ -261,6 +273,10 @@ fn collect_source_files(root: &Path, targets: &[PathBuf]) -> Result<Vec<SourceFi
                 continue;
             }
             let path = dent.into_path();
+            let rel = path.strip_prefix(root).unwrap_or(&path);
+            if exclude.is_match(rel) {
+                continue;
+            }
             let contents = match std::fs::read_to_string(&path) {
                 Ok(c) => c,
                 Err(err) => {

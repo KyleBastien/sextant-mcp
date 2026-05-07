@@ -5,6 +5,7 @@
 
 use std::path::Path;
 
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
 use sextant_core::VerdictThresholds;
 use thiserror::Error;
@@ -15,6 +16,12 @@ pub enum ConfigError {
     Io(#[from] std::io::Error),
     #[error("parse: {0}")]
     Parse(#[from] toml::de::Error),
+    #[error("invalid glob `{pattern}`: {source}")]
+    Glob {
+        pattern: String,
+        #[source]
+        source: globset::Error,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -22,6 +29,7 @@ pub enum ConfigError {
 pub struct Config {
     pub verdict: VerdictSection,
     pub size: SizeRuleConfig,
+    pub paths: PathsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +83,54 @@ impl Default for SizeRuleConfig {
     }
 }
 
+/// Path filters applied before any rule runs. The default list matches
+/// generated and vendored files that we never want to grade — `Cargo.lock`,
+/// build outputs, dependency directories. User config replaces (not extends)
+/// the default list, so projects can opt out.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PathsConfig {
+    pub exclude: Vec<String>,
+}
+
+impl Default for PathsConfig {
+    fn default() -> Self {
+        Self {
+            exclude: vec![
+                "**/Cargo.lock".into(),
+                "**/package-lock.json".into(),
+                "**/yarn.lock".into(),
+                "**/pnpm-lock.yaml".into(),
+                "**/poetry.lock".into(),
+                "**/uv.lock".into(),
+                "**/target/**".into(),
+                "**/node_modules/**".into(),
+                "**/dist/**".into(),
+                "**/build/**".into(),
+                "**/.git/**".into(),
+                "**/.sextant/cache/**".into(),
+            ],
+        }
+    }
+}
+
+impl PathsConfig {
+    pub fn matcher(&self) -> Result<GlobSet, ConfigError> {
+        let mut builder = GlobSetBuilder::new();
+        for pattern in &self.exclude {
+            let glob = Glob::new(pattern).map_err(|source| ConfigError::Glob {
+                pattern: pattern.clone(),
+                source,
+            })?;
+            builder.add(glob);
+        }
+        builder.build().map_err(|source| ConfigError::Glob {
+            pattern: "<set>".into(),
+            source,
+        })
+    }
+}
+
 impl Config {
     pub fn load_or_default(path: &Path) -> Result<Self, ConfigError> {
         if !path.exists() {
@@ -118,5 +174,29 @@ mod tests {
         assert_eq!(cfg.verdict.max_warns, 5);
         assert_eq!(cfg.size.file_length_warn, 100);
         assert_eq!(cfg.size.file_length_error, 200);
+    }
+
+    #[test]
+    fn default_path_matcher_excludes_generated_files() {
+        let cfg = PathsConfig::default();
+        let m = cfg.matcher().unwrap();
+        assert!(m.is_match("Cargo.lock"));
+        assert!(m.is_match("crates/foo/Cargo.lock"));
+        assert!(m.is_match("target/debug/build/foo"));
+        assert!(m.is_match("node_modules/some-pkg/index.js"));
+        assert!(!m.is_match("src/main.rs"));
+        assert!(!m.is_match("crates/sextant-core/src/lib.rs"));
+    }
+
+    #[test]
+    fn user_paths_replaces_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".sextant").join("config.toml");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "[paths]\nexclude = [\"**/secret/**\"]\n").unwrap();
+        let cfg = Config::from_repo_root(dir.path()).unwrap();
+        let m = cfg.paths.matcher().unwrap();
+        assert!(m.is_match("a/secret/b.rs"));
+        assert!(!m.is_match("Cargo.lock"));
     }
 }
