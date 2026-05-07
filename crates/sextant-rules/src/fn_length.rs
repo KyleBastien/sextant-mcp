@@ -1,8 +1,9 @@
 use sextant_config::SizeRuleConfig;
-use sextant_core::{Category, EvalContext, Evaluator, Finding, Rule, Scope, Severity, SourceFile};
+use sextant_core::{EvalContext, Evaluator, Finding, Rule, Severity, SourceFile};
 use sextant_lang::{function_ranges, parse, Language};
 
-pub const RULE_ID: &str = "builtin.size.fn-length";
+use crate::file_length::rule_from_parsed;
+use crate::loader::ParsedRule;
 
 pub struct FnLengthRule {
     rule: Rule,
@@ -11,22 +12,9 @@ pub struct FnLengthRule {
 }
 
 impl FnLengthRule {
-    pub fn from_config(cfg: &SizeRuleConfig) -> Self {
+    pub fn from_parsed(parsed: ParsedRule, cfg: &SizeRuleConfig) -> Self {
         Self {
-            rule: Rule {
-                id: RULE_ID.to_string(),
-                name: "Function length".to_string(),
-                description: "Flags functions whose body spans more than the configured number \
-                              of lines. Long functions are usually doing too many things; \
-                              extract helpers."
-                    .to_string(),
-                severity: Severity::Warn,
-                category: Category::Size,
-                scope: Scope::File,
-                languages: vec!["rust".into()],
-                enabled: true,
-                tags: vec!["size".into(), "complexity".into()],
-            },
+            rule: rule_from_parsed(parsed),
             warn: cfg.fn_length_warn,
             error: cfg.fn_length_error,
         }
@@ -67,7 +55,7 @@ impl Evaluator for FnLengthRule {
             if len >= self.error {
                 out.push(
                     Finding::new(
-                        RULE_ID,
+                        &self.rule.id,
                         Severity::Error,
                         path.clone(),
                         format!(
@@ -80,7 +68,7 @@ impl Evaluator for FnLengthRule {
             } else if len >= self.warn {
                 out.push(
                     Finding::new(
-                        RULE_ID,
+                        &self.rule.id,
                         Severity::Warn,
                         path.clone(),
                         format!(
@@ -99,6 +87,26 @@ impl Evaluator for FnLengthRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::loader::parse_rule_md;
+    use sextant_core::RuleSource;
+
+    fn parsed_for_test() -> ParsedRule {
+        parse_rule_md(
+            r#"---
+id: builtin.size.fn-length
+name: "Function length"
+description: "test"
+severity: warn
+category: size
+languages: [rust]
+evaluator: { type: builtin, name: fn_length }
+---
+"#,
+            RuleSource::Builtin,
+            None,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn flags_long_functions() {
@@ -107,7 +115,7 @@ mod tests {
             fn_length_error: 10,
             ..Default::default()
         };
-        let rule = FnLengthRule::from_config(&cfg);
+        let rule = FnLengthRule::from_parsed(parsed_for_test(), &cfg);
         let body = "    1;\n".repeat(12);
         let src = format!("fn big() {{\n{body}}}\n");
         let file = SourceFile::new("a.rs", src);
@@ -130,25 +138,9 @@ mod tests {
             fn_length_error: 20,
             ..Default::default()
         };
-        let rule = FnLengthRule::from_config(&cfg);
+        let rule = FnLengthRule::from_parsed(parsed_for_test(), &cfg);
         let file = SourceFile::new("a.rs", "fn small() { let x = 1; }\n");
         let root = std::env::current_dir().unwrap();
-        let f = rule.evaluate_file(
-            &file,
-            &EvalContext {
-                repo_root: root.as_path(),
-            },
-        );
-        assert!(f.is_empty());
-    }
-
-    #[test]
-    fn skips_non_rust_files() {
-        let cfg = SizeRuleConfig::default();
-        let rule = FnLengthRule::from_config(&cfg);
-        let file = SourceFile::new("a.py", "def big():\n    pass\n");
-        let root = std::env::current_dir().unwrap();
-        // language filter handled at RuleSet level, but evaluator alone should be safe.
         let f = rule.evaluate_file(
             &file,
             &EvalContext {

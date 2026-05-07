@@ -9,7 +9,7 @@ use ignore::WalkBuilder;
 use sextant_config::Config;
 use sextant_core::{EvalContext, Finding, Report, SourceFile, Verdict, VerdictThresholds};
 use sextant_diff::{compute, BaseSpec, DiffSet, HeadSpec};
-use sextant_rules::RuleSet;
+use sextant_rules::{parse_rule_md, RuleSet};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -60,6 +60,16 @@ enum Cmd {
 enum RulesCmd {
     /// List all loaded rules.
     List,
+    /// Print the full markdown documentation for a rule.
+    Explain {
+        /// Rule id (e.g. `builtin.size.fn-length`).
+        id: String,
+    },
+    /// Validate a rule markdown file's frontmatter without loading it.
+    Check {
+        /// Path to a `.md` rule file.
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -113,9 +123,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
             format,
             fail_on,
         }),
-        Cmd::Rules {
-            cmd: RulesCmd::List,
-        } => cmd_rules_list(),
+        Cmd::Rules { cmd } => match cmd {
+            RulesCmd::List => cmd_rules_list(),
+            RulesCmd::Explain { id } => cmd_rules_explain(&id),
+            RulesCmd::Check { path } => cmd_rules_check(&path),
+        },
     }
 }
 
@@ -136,7 +148,7 @@ fn cmd_grade(args: GradeArgs) -> Result<ExitCode> {
         .paths
         .matcher()
         .context("building path-exclude matcher")?;
-    let ruleset = RuleSet::builtin(&config);
+    let ruleset = RuleSet::load(&cwd, &config).context("loading rules")?;
     let ctx = EvalContext { repo_root: &cwd };
 
     let findings = if args.diff {
@@ -178,18 +190,95 @@ fn cmd_grade(args: GradeArgs) -> Result<ExitCode> {
 fn cmd_rules_list() -> Result<ExitCode> {
     let cwd = std::env::current_dir().context("getting current dir")?;
     let config = Config::from_repo_root(&cwd)?;
-    let ruleset = RuleSet::builtin(&config);
+    let ruleset = RuleSet::load(&cwd, &config).context("loading rules")?;
     for ev in ruleset.evaluators() {
         let r = ev.rule();
         println!(
-            "{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}",
             r.id,
             r.severity.as_str(),
             format!("{:?}", r.scope).to_lowercase(),
+            r.source.as_str(),
             r.name
         );
     }
     Ok(ExitCode::from(0))
+}
+
+fn cmd_rules_explain(id: &str) -> Result<ExitCode> {
+    let cwd = std::env::current_dir().context("getting current dir")?;
+    let config = Config::from_repo_root(&cwd)?;
+    let ruleset = RuleSet::load(&cwd, &config).context("loading rules")?;
+    let Some(rule) = ruleset.evaluators().iter().find(|e| e.rule().id == id) else {
+        eprintln!("error: no rule with id `{id}`");
+        return Ok(ExitCode::from(2));
+    };
+    let r = rule.rule();
+    println!("# {} ({})", r.name, r.id);
+    println!();
+    println!(
+        "**severity:** {}  •  **category:** {}  •  **source:** {}",
+        r.severity.as_str(),
+        category_str(&r.category),
+        r.source.as_str()
+    );
+    println!();
+    if !r.description.is_empty() {
+        println!("{}", r.description);
+        println!();
+    }
+    if !r.body.is_empty() {
+        println!("{}", r.body);
+    }
+    Ok(ExitCode::from(0))
+}
+
+fn cmd_rules_check(path: &Path) -> Result<ExitCode> {
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    match parse_rule_md(
+        &text,
+        sextant_core::RuleSource::Repo,
+        Some(path.to_path_buf()),
+    ) {
+        Ok(rule) => {
+            println!("OK: {} ({})", rule.id, rule.name);
+            println!(
+                "  severity={} category={} scope={:?}",
+                rule.severity.as_str(),
+                category_str(&rule.category),
+                rule.scope,
+            );
+            match &rule.evaluator {
+                sextant_rules::EvaluatorSpec::Builtin { name } => {
+                    println!("  evaluator=builtin name={name}");
+                }
+                sextant_rules::EvaluatorSpec::Regex { pattern, .. } => {
+                    println!("  evaluator=regex pattern={pattern:?}");
+                }
+            }
+            Ok(ExitCode::from(0))
+        }
+        Err(err) => {
+            eprintln!("error: {err}");
+            Ok(ExitCode::from(2))
+        }
+    }
+}
+
+fn category_str(c: &sextant_core::Category) -> String {
+    use sextant_core::Category::*;
+    match c {
+        Complexity => "complexity".into(),
+        Size => "size".into(),
+        Duplication => "duplication".into(),
+        Tests => "tests".into(),
+        Reliability => "reliability".into(),
+        Style => "style".into(),
+        Security => "security".into(),
+        Docs => "docs".into(),
+        Custom(s) => format!("custom:{s}"),
+    }
 }
 
 fn run_diff(

@@ -1,8 +1,9 @@
 use sextant_config::SizeRuleConfig;
-use sextant_core::{Category, EvalContext, Evaluator, Finding, Rule, Scope, Severity, SourceFile};
+use sextant_core::{EvalContext, Evaluator, Finding, Rule, Severity, SourceFile};
 use sextant_lang::{function_ranges, parse, Language};
 
-pub const RULE_ID: &str = "builtin.size.param-count";
+use crate::file_length::rule_from_parsed;
+use crate::loader::ParsedRule;
 
 pub struct ParamCountRule {
     rule: Rule,
@@ -11,22 +12,9 @@ pub struct ParamCountRule {
 }
 
 impl ParamCountRule {
-    pub fn from_config(cfg: &SizeRuleConfig) -> Self {
+    pub fn from_parsed(parsed: ParsedRule, cfg: &SizeRuleConfig) -> Self {
         Self {
-            rule: Rule {
-                id: RULE_ID.to_string(),
-                name: "Parameter count".to_string(),
-                description: "Flags functions that take more than the configured number of \
-                              parameters. Long parameter lists usually indicate a missing \
-                              type or a function doing too much."
-                    .to_string(),
-                severity: Severity::Warn,
-                category: Category::Size,
-                scope: Scope::File,
-                languages: vec!["rust".into()],
-                enabled: true,
-                tags: vec!["size".into(), "api".into()],
-            },
+            rule: rule_from_parsed(parsed),
             warn: cfg.param_count_warn,
             error: cfg.param_count_error,
         }
@@ -60,7 +48,7 @@ impl Evaluator for ParamCountRule {
             if f.param_count >= self.error {
                 out.push(
                     Finding::new(
-                        RULE_ID,
+                        &self.rule.id,
                         Severity::Error,
                         path.clone(),
                         format!(
@@ -73,7 +61,7 @@ impl Evaluator for ParamCountRule {
             } else if f.param_count >= self.warn {
                 out.push(
                     Finding::new(
-                        RULE_ID,
+                        &self.rule.id,
                         Severity::Warn,
                         path.clone(),
                         format!(
@@ -92,6 +80,26 @@ impl Evaluator for ParamCountRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::loader::parse_rule_md;
+    use sextant_core::RuleSource;
+
+    fn parsed_for_test() -> ParsedRule {
+        parse_rule_md(
+            r#"---
+id: builtin.size.param-count
+name: "Parameter count"
+description: "test"
+severity: warn
+category: size
+languages: [rust]
+evaluator: { type: builtin, name: param_count }
+---
+"#,
+            RuleSource::Builtin,
+            None,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn flags_at_threshold() {
@@ -100,7 +108,7 @@ mod tests {
             param_count_error: 5,
             ..Default::default()
         };
-        let rule = ParamCountRule::from_config(&cfg);
+        let rule = ParamCountRule::from_parsed(parsed_for_test(), &cfg);
         let file = SourceFile::new(
             "a.rs",
             "fn many(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) {}\n",
@@ -119,7 +127,7 @@ mod tests {
     #[test]
     fn clean_when_under() {
         let cfg = SizeRuleConfig::default();
-        let rule = ParamCountRule::from_config(&cfg);
+        let rule = ParamCountRule::from_parsed(parsed_for_test(), &cfg);
         let file = SourceFile::new("a.rs", "fn ok(x: i32) {}\n");
         let root = std::env::current_dir().unwrap();
         let f = rule.evaluate_file(
