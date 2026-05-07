@@ -1494,6 +1494,7 @@ dependencies = [
 name = "sextant-core"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -1516,6 +1517,7 @@ dependencies = [
  "globset",
  "ignore",
  "serde",
+ "serde_json",
  "sextant-config",
  "sextant-core",
  "sextant-diff",

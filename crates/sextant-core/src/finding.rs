@@ -59,6 +59,21 @@ impl Finding {
         self.end_line = Some(end);
         self
     }
+
+    /// Stable hash that survives small line shifts. Used for baseline
+    /// regression matching: a finding at the same `(rule_id, path,
+    /// message)` is treated as the same finding even if its line moved.
+    /// We deliberately exclude line numbers — code edits shift them
+    /// without changing the underlying issue.
+    pub fn identity(&self) -> String {
+        let mut h = blake3::Hasher::new();
+        h.update(self.rule_id.as_bytes());
+        h.update(b"\0");
+        h.update(self.path.to_string_lossy().as_bytes());
+        h.update(b"\0");
+        h.update(self.message.as_bytes());
+        h.finalize().to_hex().to_string()
+    }
 }
 
 #[cfg(test)]
@@ -98,5 +113,29 @@ mod tests {
         let f = Finding::new("r", Severity::Info, "a.rs", "m").spanning(3, 11);
         assert_eq!(f.line, Some(3));
         assert_eq!(f.end_line, Some(11));
+    }
+
+    #[test]
+    fn identity_is_stable_across_line_shifts() {
+        let a = Finding::new("r", Severity::Warn, "a.rs", "msg").at_line(10);
+        let b = Finding::new("r", Severity::Warn, "a.rs", "msg").at_line(42);
+        assert_eq!(a.identity(), b.identity());
+    }
+
+    #[test]
+    fn identity_changes_with_rule_path_or_message() {
+        let base = Finding::new("r", Severity::Warn, "a.rs", "msg");
+        assert_ne!(
+            base.identity(),
+            Finding::new("r2", Severity::Warn, "a.rs", "msg").identity()
+        );
+        assert_ne!(
+            base.identity(),
+            Finding::new("r", Severity::Warn, "b.rs", "msg").identity()
+        );
+        assert_ne!(
+            base.identity(),
+            Finding::new("r", Severity::Warn, "a.rs", "different").identity()
+        );
     }
 }

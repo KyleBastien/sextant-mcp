@@ -22,7 +22,8 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Cmd {
     /// Grade files. Defaults to whole-file mode; pass `--diff` to grade
-    /// only changed lines against a base ref.
+    /// only changed lines against a base ref, or `--pr` for PR-mode
+    /// regression grading with a baseline cache.
     Grade {
         /// Paths to grade. Ignored when `--diff` is set. Defaults to the
         /// current directory.
@@ -30,6 +31,16 @@ enum Cmd {
         /// Switch to diff mode: only findings on changed lines are reported.
         #[arg(long)]
         diff: bool,
+        /// PR mode: diff-grade head against a baseline-graded base SHA
+        /// and report only *new* findings introduced by the change.
+        /// Implies `--diff`.
+        #[arg(long, conflicts_with = "diff")]
+        pr: bool,
+        /// Directory to read/write per-base-SHA baseline reports. Used
+        /// by the GitHub Action via `actions/cache` to avoid recomputing
+        /// the baseline on every PR run.
+        #[arg(long, value_name = "DIR")]
+        baseline_cache: Option<PathBuf>,
         /// Base ref. Default: merge-base with origin/main, falling back to HEAD~1.
         #[arg(long)]
         base: Option<String>,
@@ -42,6 +53,10 @@ enum Cmd {
         /// Output format.
         #[arg(long, value_enum, default_value_t = Format::Human)]
         format: Format,
+        /// Write the rendered output to PATH instead of stdout. Useful
+        /// for piping a markdown review into `gh api ... -F body=@...`.
+        #[arg(long, value_name = "PATH")]
+        output: Option<PathBuf>,
         /// Severity at which to exit non-zero.
         #[arg(long, value_enum, default_value_t = FailOn::Error)]
         fail_on: FailOn,
@@ -97,19 +112,25 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
         Cmd::Grade {
             paths,
             diff,
+            pr,
+            baseline_cache,
             base,
             head,
             working_tree,
             format,
+            output,
             fail_on,
             no_llm,
         } => commands::grade::run(GradeArgs {
             paths,
             diff,
+            pr,
+            baseline_cache,
             base,
             head,
             working_tree,
             format,
+            output,
             fail_on,
             no_llm,
         }),

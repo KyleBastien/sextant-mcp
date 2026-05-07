@@ -5,6 +5,7 @@
 //! that rule implementations satisfy. Wire formats (JSON for MCP, markdown
 //! for PR comments) are derived from these types in higher-level crates.
 
+mod baseline;
 mod evaluator;
 mod finding;
 mod report;
@@ -12,12 +13,13 @@ mod rule;
 mod source;
 mod verdict;
 
+pub use baseline::BaselineDelta;
 pub use evaluator::{EvalContext, Evaluator};
 pub use finding::{Finding, Severity};
 pub use report::{Report, SeverityCounts};
 pub use rule::{Category, Rule, RuleSource, Scope};
 pub use source::SourceFile;
-pub use verdict::{Verdict, VerdictThresholds};
+pub use verdict::{Verdict, VerdictMode, VerdictThresholds};
 
 use thiserror::Error;
 

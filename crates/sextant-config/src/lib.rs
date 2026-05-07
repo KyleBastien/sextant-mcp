@@ -7,7 +7,7 @@ use std::path::Path;
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
-use sextant_core::VerdictThresholds;
+use sextant_core::{VerdictMode, VerdictThresholds};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -40,6 +40,10 @@ pub struct Config {
 pub struct VerdictSection {
     pub max_errors: u32,
     pub max_warns: u32,
+    /// `absolute` (default) counts every finding; `regression` only
+    /// counts findings new vs the baseline. `--pr` overrides this to
+    /// `regression` regardless of the file value.
+    pub mode: VerdictMode,
 }
 
 impl Default for VerdictSection {
@@ -47,6 +51,7 @@ impl Default for VerdictSection {
         Self {
             max_errors: 0,
             max_warns: u32::MAX,
+            mode: VerdictMode::Absolute,
         }
     }
 }
