@@ -78,30 +78,44 @@ impl RuleSet {
 
 fn build_evaluator(rule: ParsedRule, config: &Config) -> Result<Arc<dyn Evaluator>, RuleSetError> {
     match rule.evaluator.clone() {
-        EvaluatorSpec::Builtin { name } => match name.as_str() {
-            "file_length" => Ok(Arc::new(FileLengthRule::from_parsed(rule, &config.size))),
-            "fn_length" => Ok(Arc::new(FnLengthRule::from_parsed(rule, &config.size))),
-            "param_count" => Ok(Arc::new(ParamCountRule::from_parsed(rule, &config.size))),
-            "cyclomatic" => Ok(Arc::new(CyclomaticRule::from_parsed(
-                rule,
-                &config.complexity,
-            ))),
-            "nesting" => Ok(Arc::new(NestingRule::from_parsed(rule, &config.complexity))),
-            other => Err(RuleSetError::UnknownBuiltin {
-                rule: rule.id,
-                name: other.to_string(),
-            }),
-        },
+        EvaluatorSpec::Builtin { name } => build_builtin(&name, rule, config),
         EvaluatorSpec::Regex {
             pattern,
             exclude_paths,
-        } => {
-            let id = rule.id.clone();
-            let built = RegexRule::from_parsed(rule, &pattern, &exclude_paths)
-                .map_err(|source| RuleSetError::Regex { rule: id, source })?;
-            Ok(Arc::new(built))
-        }
+        } => build_regex(rule, &pattern, &exclude_paths),
     }
+}
+
+fn build_builtin(
+    name: &str,
+    rule: ParsedRule,
+    config: &Config,
+) -> Result<Arc<dyn Evaluator>, RuleSetError> {
+    match name {
+        "file_length" => Ok(Arc::new(FileLengthRule::from_parsed(rule, &config.size))),
+        "fn_length" => Ok(Arc::new(FnLengthRule::from_parsed(rule, &config.size))),
+        "param_count" => Ok(Arc::new(ParamCountRule::from_parsed(rule, &config.size))),
+        "cyclomatic" => Ok(Arc::new(CyclomaticRule::from_parsed(
+            rule,
+            &config.complexity,
+        ))),
+        "nesting" => Ok(Arc::new(NestingRule::from_parsed(rule, &config.complexity))),
+        other => Err(RuleSetError::UnknownBuiltin {
+            rule: rule.id,
+            name: other.to_string(),
+        }),
+    }
+}
+
+fn build_regex(
+    rule: ParsedRule,
+    pattern: &str,
+    exclude_paths: &[String],
+) -> Result<Arc<dyn Evaluator>, RuleSetError> {
+    let id = rule.id.clone();
+    let built = RegexRule::from_parsed(rule, pattern, exclude_paths)
+        .map_err(|source| RuleSetError::Regex { rule: id, source })?;
+    Ok(Arc::new(built))
 }
 
 fn rule_applies_to_file(ev: &dyn Evaluator, file: &SourceFile) -> bool {

@@ -53,14 +53,14 @@ impl Evaluator for CyclomaticRule {
     }
 
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
-        evaluate(
-            &self.rule,
-            Metric::Cyclomatic,
-            self.warn,
-            self.error,
+        evaluate(EvalArgs {
+            rule: &self.rule,
+            metric: Metric::Cyclomatic,
+            warn: self.warn,
+            error: self.error,
             file,
             ctx,
-        )
+        })
     }
 }
 
@@ -86,35 +86,37 @@ impl Evaluator for NestingRule {
     }
 
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
-        evaluate(
-            &self.rule,
-            Metric::Nesting,
-            self.warn,
-            self.error,
+        evaluate(EvalArgs {
+            rule: &self.rule,
+            metric: Metric::Nesting,
+            warn: self.warn,
+            error: self.error,
             file,
             ctx,
-        )
+        })
     }
 }
 
-fn evaluate(
-    rule: &Rule,
+struct EvalArgs<'a> {
+    rule: &'a Rule,
     metric: Metric,
     warn: u32,
     error: u32,
-    file: &SourceFile,
-    ctx: &EvalContext<'_>,
-) -> Vec<Finding> {
-    let Some(hint) = file.language_hint() else {
+    file: &'a SourceFile,
+    ctx: &'a EvalContext<'a>,
+}
+
+fn evaluate(args: EvalArgs<'_>) -> Vec<Finding> {
+    let Some(hint) = args.file.language_hint() else {
         return Vec::new();
     };
     let Some(lang) = Language::from_hint(hint) else {
         return Vec::new();
     };
-    let parsed = match parse(file.contents.clone(), lang) {
+    let parsed = match parse(args.file.contents.clone(), lang) {
         Ok(p) => p,
         Err(err) => {
-            tracing::debug!(?err, path=?file.path, "parse failed");
+            tracing::debug!(?err, path=?args.file.path, "parse failed");
             return Vec::new();
         }
     };
@@ -123,24 +125,25 @@ fn evaluate(
         Err(_) => return Vec::new(),
     };
 
-    let path = file.relative_to(ctx.repo_root);
+    let path = args.file.relative_to(args.ctx.repo_root);
     let mut out = Vec::new();
     for fc in fns {
-        let value = metric.read(&fc);
-        let (sev, threshold) = if value >= error {
-            (Severity::Error, error)
-        } else if value >= warn {
-            (Severity::Warn, warn)
+        let value = args.metric.read(&fc);
+        let (sev, threshold) = if value >= args.error {
+            (Severity::Error, args.error)
+        } else if value >= args.warn {
+            (Severity::Warn, args.warn)
         } else {
             continue;
         };
         let msg = format!(
             "Function `{}` has {} of {value} (threshold: {threshold}).",
             fc.name,
-            metric.label(),
+            args.metric.label(),
         );
         out.push(
-            Finding::new(&rule.id, sev, path.clone(), msg).spanning(fc.start_line, fc.end_line),
+            Finding::new(&args.rule.id, sev, path.clone(), msg)
+                .spanning(fc.start_line, fc.end_line),
         );
     }
     out

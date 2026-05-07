@@ -1,0 +1,172 @@
+//! Cyclomatic complexity and max-nesting metrics over a parsed file.
+
+use tree_sitter::{Node, Tree, TreeCursor};
+
+use crate::parser::{LangError, Language, ParsedFile};
+use crate::ranges::function_ranges;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionComplexity {
+    pub name: String,
+    pub start_line: u32,
+    pub end_line: u32,
+    /// McCabe cyclomatic complexity. 1 + count of branching nodes.
+    pub cyclomatic: u32,
+    /// Maximum depth of nested control structures within the function body.
+    /// 0 = no control structures.
+    pub max_nesting: u32,
+}
+
+/// Compute cyclomatic complexity and max-nesting for every top-level function
+/// in the file. Functions defined inside other functions are computed
+/// independently — each gets its own row.
+pub fn function_complexity(parsed: &ParsedFile) -> Result<Vec<FunctionComplexity>, LangError> {
+    let ranges = function_ranges(parsed)?;
+    let mut out = Vec::with_capacity(ranges.len());
+    for r in ranges {
+        let Some(def_node) = find_def_at_line(&parsed.tree, r.start_line, parsed.language) else {
+            continue;
+        };
+        out.push(FunctionComplexity {
+            name: r.name,
+            start_line: r.start_line,
+            end_line: r.end_line,
+            cyclomatic: 1 + count_branches(def_node, parsed.language),
+            max_nesting: max_depth(def_node, parsed.language),
+        });
+    }
+    Ok(out)
+}
+
+fn find_def_at_line(tree: &Tree, line: u32, language: Language) -> Option<Node<'_>> {
+    let target_kind = match language {
+        Language::Rust => "function_item",
+        Language::Python => "function_definition",
+    };
+    let mut cursor = tree.walk();
+    find_def_recursive(&mut cursor, target_kind, line)
+}
+
+fn find_def_recursive<'tree>(
+    cursor: &mut TreeCursor<'tree>,
+    target_kind: &str,
+    line: u32,
+) -> Option<Node<'tree>> {
+    let node = cursor.node();
+    if node.kind() == target_kind && (node.start_position().row as u32) + 1 == line {
+        return Some(node);
+    }
+    if cursor.goto_first_child() {
+        loop {
+            if let Some(found) = find_def_recursive(cursor, target_kind, line) {
+                return Some(found);
+            }
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+        cursor.goto_parent();
+    }
+    None
+}
+
+fn count_branches(root: Node<'_>, language: Language) -> u32 {
+    let mut count = 0u32;
+    let mut cursor = root.walk();
+    walk(&mut cursor, &mut |node| {
+        if is_branch(node, language) {
+            count += 1;
+        }
+    });
+    count
+}
+
+fn max_depth(root: Node<'_>, language: Language) -> u32 {
+    let mut max = 0u32;
+    let mut cursor = root.walk();
+    // Skip the function's own def node — first nesting level is from inside its body.
+    if cursor.goto_first_child() {
+        loop {
+            recurse_depth(&mut cursor, 0, &mut max, language);
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+    max
+}
+
+fn recurse_depth(cursor: &mut TreeCursor, depth: u32, max: &mut u32, lang: Language) {
+    let node = cursor.node();
+    let new_depth = if is_nesting_increment(&node, lang) {
+        depth + 1
+    } else {
+        depth
+    };
+    if new_depth > *max {
+        *max = new_depth;
+    }
+    if cursor.goto_first_child() {
+        loop {
+            recurse_depth(cursor, new_depth, max, lang);
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+        cursor.goto_parent();
+    }
+}
+
+fn walk<F: FnMut(&Node<'_>)>(cursor: &mut TreeCursor, visit: &mut F) {
+    visit(&cursor.node());
+    if cursor.goto_first_child() {
+        loop {
+            walk(cursor, visit);
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+        cursor.goto_parent();
+    }
+}
+
+fn is_branch(node: &Node<'_>, language: Language) -> bool {
+    match language {
+        Language::Rust => matches!(
+            node.kind(),
+            "if_expression"
+                | "match_arm"
+                | "while_expression"
+                | "while_let_expression"
+                | "for_expression"
+                | "try_expression"
+        ),
+        Language::Python => matches!(
+            node.kind(),
+            "if_statement"
+                | "elif_clause"
+                | "while_statement"
+                | "for_statement"
+                | "except_clause"
+                | "conditional_expression"
+        ),
+    }
+}
+
+fn is_nesting_increment(node: &Node<'_>, language: Language) -> bool {
+    match language {
+        Language::Rust => matches!(
+            node.kind(),
+            "if_expression"
+                | "match_expression"
+                | "while_expression"
+                | "while_let_expression"
+                | "for_expression"
+                | "loop_expression"
+        ),
+        Language::Python => matches!(
+            node.kind(),
+            "if_statement" | "while_statement" | "for_statement" | "try_statement"
+        ),
+    }
+}
