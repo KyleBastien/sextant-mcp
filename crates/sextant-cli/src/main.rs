@@ -57,6 +57,12 @@ enum Cmd {
         /// for piping a markdown review into `gh api ... -F body=@...`.
         #[arg(long, value_name = "PATH")]
         output: Option<PathBuf>,
+        /// Side-channel: also dump the structured report (PR mode:
+        /// `PrReport`, otherwise `Report`) as JSON to PATH. Independent
+        /// of `--format`, so the GitHub Action can take markdown for the
+        /// review while still parsing fields out of JSON.
+        #[arg(long, value_name = "PATH")]
+        report_json: Option<PathBuf>,
         /// Severity at which to exit non-zero.
         #[arg(long, value_enum, default_value_t = FailOn::Error)]
         fail_on: FailOn,
@@ -119,6 +125,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             working_tree,
             format,
             output,
+            report_json,
             fail_on,
             no_llm,
         } => commands::grade::run(GradeArgs {
@@ -131,6 +138,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             working_tree,
             format,
             output,
+            report_json,
             fail_on,
             no_llm,
         }),

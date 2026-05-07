@@ -84,6 +84,40 @@ fn pr_mode_emits_markdown_review_with_marker() {
 }
 
 #[test]
+fn pr_mode_report_json_writes_pr_report_shape() {
+    let dir = make_pr_repo();
+    let root = dir.path();
+    let review = root.join("review.md");
+    let report = root.join("report.json");
+
+    Command::cargo_bin("sextant")
+        .unwrap()
+        .args([
+            "grade",
+            "--pr",
+            "--base",
+            "HEAD~1",
+            "--format",
+            "markdown",
+            "--output",
+            review.to_str().unwrap(),
+            "--report-json",
+            report.to_str().unwrap(),
+            "--fail-on",
+            "never",
+        ])
+        .current_dir(root)
+        .assert()
+        .success();
+
+    let body = std::fs::read_to_string(&report).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(v.get("delta").is_some(), "got: {body}");
+    assert!(v.get("verdict").is_some(), "got: {body}");
+    assert!(v["delta"]["new_counts"].get("error").is_some(), "got: {body}");
+}
+
+#[test]
 fn pr_mode_baseline_cache_is_reused() {
     let dir = make_pr_repo();
     let root = dir.path();
