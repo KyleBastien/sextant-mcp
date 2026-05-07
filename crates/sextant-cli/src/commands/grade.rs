@@ -35,6 +35,11 @@ pub struct GradeArgs {
     pub working_tree: bool,
     pub format: Format,
     pub output: Option<PathBuf>,
+    /// Side-channel: always write the underlying report (PR mode:
+    /// `PrReport`, otherwise `Report`) as JSON to this path. Independent
+    /// of `--format`, so the GitHub Action can pick markdown for the
+    /// review while still parsing structured fields out of JSON.
+    pub report_json: Option<PathBuf>,
     pub fail_on: FailOn,
     pub no_llm: bool,
 }
@@ -68,6 +73,9 @@ fn run_normal(cwd: &std::path::Path, args: GradeArgs) -> Result<ExitCode> {
     .context("grading")?;
     let rendered = render_normal(&report, args.format)?;
     emit(rendered, args.output.as_deref())?;
+    if let Some(path) = args.report_json.as_deref() {
+        write_json(path, &report).context("writing --report-json")?;
+    }
     Ok(exit_for(&report, args.fail_on))
 }
 
@@ -89,7 +97,17 @@ fn run_pr(cwd: &std::path::Path, args: GradeArgs) -> Result<ExitCode> {
     .context("grading PR")?;
     let rendered = render_pr(&pr, args.format)?;
     emit(rendered, args.output.as_deref())?;
+    if let Some(path) = args.report_json.as_deref() {
+        write_json(path, &pr).context("writing --report-json")?;
+    }
     Ok(exit_for_pr(&pr, args.fail_on))
+}
+
+fn write_json<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
+    let json = serde_json::to_string_pretty(value)?;
+    std::fs::write(path, json)
+        .with_context(|| format!("writing JSON report to {}", path.display()))?;
+    Ok(())
 }
 
 fn render_normal(report: &Report, format: Format) -> Result<String> {

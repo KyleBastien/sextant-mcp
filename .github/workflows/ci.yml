@@ -11,14 +11,55 @@ env:
 
 jobs:
   test:
-    name: cargo test
-    runs-on: ubuntu-latest
+    name: cargo test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux runs fmt + clippy + test (the canonical lint set). macOS
+        # and Windows just run tests so we catch platform-specific bugs
+        # in the diff/git2/judge code paths without quadruple-linting.
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace --locked
+
+      - name: cargo fmt
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace --locked
+
+  shellcheck:
+    name: shellcheck action scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck action/scripts/*.sh
+
+  yamllint:
+    name: yamllint workflows + action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run yamllint
+        run: |
+          pip install --quiet 'yamllint==1.35.1'
+          # GitHub workflows are full of `on: push` etc. — relax the line
+          # length and truthy rules so lint reflects real issues, not style.
+          yamllint -d '{extends: default, rules: {line-length: disable, truthy: {check-keys: false}, document-start: disable}}' \
+            .github/workflows action/action.yml

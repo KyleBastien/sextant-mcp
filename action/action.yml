@@ -1,0 +1,198 @@
+name: Sextant
+description: |
+  Code grader for AI-agent workflows. Runs `sextant grade --pr` against
+  the PR head, compares to a baseline-graded base SHA, and posts a single
+  review comment summarizing new and fixed findings.
+author: Kyle Bastien
+
+branding:
+  icon: compass
+  color: blue
+
+inputs:
+  version:
+    description: |
+      Sextant release tag to install (e.g. `v0.1.0`). Use `latest` to
+      pick the most recent release. Pin a tag for reproducibility.
+    required: false
+    default: latest
+  base:
+    description: |
+      Base ref to grade against. Defaults to the PR target branch
+      (`github.event.pull_request.base.sha`); falls back to `origin/main`.
+    required: false
+    default: ""
+  head:
+    description: |
+      Head ref. Defaults to the working tree, which is what
+      `actions/checkout` leaves on disk for PR runs.
+    required: false
+    default: ""
+  fail-on:
+    description: |
+      Severity at which the action exits non-zero. One of `never`, `warn`,
+      `error`. Default: `error`.
+    required: false
+    default: error
+  format:
+    description: |
+      Output format. `markdown` is what the comment uses; `sarif` enables
+      the SARIF upload step (see `upload-sarif`).
+    required: false
+    default: markdown
+  comment:
+    description: Post (or update) a PR review comment with the markdown review.
+    required: false
+    default: "true"
+  upload-sarif:
+    description: |
+      If `true`, also runs Sextant in SARIF mode and uploads the result
+      to GitHub Code Scanning. Requires `security-events: write`.
+    required: false
+    default: "false"
+  no-llm:
+    description: Skip LLM-evaluated rules entirely (passes `--no-llm`).
+    required: false
+    default: "false"
+  baseline-cache-key:
+    description: |
+      Cache key for the persisted baseline report. Defaults to
+      `sextant-baseline-${{ inputs.base or HEAD }}`. Override only if you
+      need shared cross-PR caches.
+    required: false
+    default: ""
+  github-token:
+    description: |
+      Token used to post the review comment. Defaults to
+      `${{ github.token }}`. Needs `pull-requests: write` on PR runs.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  verdict:
+    description: |
+      `APPROVE` or `REQUEST_CHANGES` — the regression-mode verdict
+      computed against the delta.
+    value: ${{ steps.grade.outputs.verdict }}
+  new-errors:
+    description: Count of new error-severity findings introduced by the PR.
+    value: ${{ steps.grade.outputs.new_errors }}
+  new-warnings:
+    description: Count of new warn-severity findings introduced by the PR.
+    value: ${{ steps.grade.outputs.new_warnings }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve base ref
+      id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+        base="${{ inputs.base }}"
+        if [ -z "$base" ] && [ -n "${{ github.event.pull_request.base.sha || '' }}" ]; then
+          base="${{ github.event.pull_request.base.sha }}"
+        fi
+        if [ -z "$base" ]; then
+          base="origin/main"
+        fi
+        echo "base=$base" >> "$GITHUB_OUTPUT"
+
+        cache_key="${{ inputs.baseline-cache-key }}"
+        if [ -z "$cache_key" ]; then
+          cache_key="sextant-baseline-$base"
+        fi
+        echo "cache_key=$cache_key" >> "$GITHUB_OUTPUT"
+
+    - name: Restore baseline cache
+      id: baseline-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: .sextant/cache/baseline
+        key: ${{ steps.resolve.outputs.cache_key }}
+
+    - name: Install sextant
+      shell: bash
+      env:
+        SEXTANT_VERSION: ${{ inputs.version }}
+        SEXTANT_REPO: ${{ github.action_repository || 'kylebastien/sextant-mcp' }}
+      run: $GITHUB_ACTION_PATH/scripts/install-sextant.sh
+
+    - name: Run sextant grade --pr
+      id: grade
+      shell: bash
+      env:
+        FAIL_ON: ${{ inputs.fail-on }}
+        FMT: ${{ inputs.format }}
+        BASE_REF: ${{ steps.resolve.outputs.base }}
+        HEAD_REF: ${{ inputs.head }}
+        NO_LLM: ${{ inputs.no-llm }}
+      run: |
+        set -euo pipefail
+        flags=(grade --pr --base "$BASE_REF"
+               --baseline-cache .sextant/cache/baseline
+               --format "$FMT"
+               --output sextant-review.md
+               --report-json sextant-report.json
+               --fail-on never)
+        if [ -n "$HEAD_REF" ]; then
+          flags+=(--head "$HEAD_REF")
+        fi
+        if [ "$NO_LLM" = "true" ]; then
+          flags+=(--no-llm)
+        fi
+        # First pass: produce both the rendered review and the JSON
+        # side-channel report. Run with `--fail-on never` so we always
+        # finish; the action's exit status is set by re-evaluating the
+        # threshold below, after we've parsed verdict and counts.
+        sextant "${flags[@]}"
+
+        verdict=$(jq -r '.verdict.kind // .verdict' sextant-report.json | tr '[:lower:]' '[:upper:]')
+        new_errors=$(jq -r '.delta.new_counts.error' sextant-report.json)
+        new_warnings=$(jq -r '.delta.new_counts.warn' sextant-report.json)
+        echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+        echo "new_errors=$new_errors" >> "$GITHUB_OUTPUT"
+        echo "new_warnings=$new_warnings" >> "$GITHUB_OUTPUT"
+
+        case "$FAIL_ON" in
+          never) exit 0 ;;
+          warn)  [ "$new_errors" -eq 0 ] && [ "$new_warnings" -eq 0 ] || exit 1 ;;
+          error) [ "$new_errors" -eq 0 ] || exit 1 ;;
+          *)     echo "::error::unknown fail-on: $FAIL_ON" >&2; exit 2 ;;
+        esac
+
+    - name: Post review comment
+      if: ${{ inputs.comment == 'true' && github.event.pull_request.number }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+      run: $GITHUB_ACTION_PATH/scripts/post-review.sh sextant-review.md
+
+    - name: Save baseline cache
+      if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+      uses: actions/cache/save@v4
+      with:
+        path: .sextant/cache/baseline
+        key: ${{ steps.resolve.outputs.cache_key }}
+
+    - name: Upload SARIF
+      if: ${{ inputs.upload-sarif == 'true' }}
+      shell: bash
+      env:
+        BASE_REF: ${{ steps.resolve.outputs.base }}
+        NO_LLM: ${{ inputs.no-llm }}
+      run: |
+        set -euo pipefail
+        sextant_args=(grade --pr --base "$BASE_REF" --format sarif --output sextant.sarif --fail-on never)
+        if [ "$NO_LLM" = "true" ]; then
+          sextant_args+=(--no-llm)
+        fi
+        sextant "${sextant_args[@]}"
+
+    - name: Upload SARIF to Code Scanning
+      if: ${{ inputs.upload-sarif == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: sextant.sarif
