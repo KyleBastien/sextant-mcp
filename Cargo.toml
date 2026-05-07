@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sextant-core",
+    "crates/sextant-rules",
+    "crates/sextant-config",
+    "crates/sextant-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kylebastien/sextant-mcp"
+rust-version = "1.75"
+
+[workspace.dependencies]
+sextant-core = { path = "crates/sextant-core", version = "0.1.0" }
+sextant-rules = { path = "crates/sextant-rules", version = "0.1.0" }
+sextant-config = { path = "crates/sextant-config", version = "0.1.0" }
+
+anyhow = "1"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+clap = { version = "4", features = ["derive"] }
+ignore = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
