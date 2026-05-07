@@ -15,7 +15,7 @@ mod verdict;
 pub use evaluator::{EvalContext, Evaluator};
 pub use finding::{Finding, Severity};
 pub use report::{Report, SeverityCounts};
-pub use rule::{Category, Rule, Scope};
+pub use rule::{Category, Rule, RuleSource, Scope};
 pub use source::SourceFile;
 pub use verdict::{Verdict, VerdictThresholds};
 
