@@ -54,3 +54,24 @@ pub fn parse(source: impl Into<String>, language: Language) -> Result<ParsedFile
         tree,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_hint_recognizes_supported_languages() {
+        assert_eq!(Language::from_hint("rust"), Some(Language::Rust));
+        assert_eq!(Language::from_hint("python"), Some(Language::Python));
+        assert_eq!(Language::from_hint("nope"), None);
+    }
+
+    #[test]
+    fn parse_round_trips_source_and_language() {
+        let src = "fn x() {}\n";
+        let p = parse(src, Language::Rust).unwrap();
+        assert_eq!(p.language, Language::Rust);
+        assert_eq!(p.source, src);
+        assert_eq!(p.tree.root_node().kind(), "source_file");
+    }
+}

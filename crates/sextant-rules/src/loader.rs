@@ -337,6 +337,37 @@ evaluator: { type: regex, pattern: "y" }
     }
 
     #[test]
+    fn repo_rules_walks_dot_sextant_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules_dir = dir.path().join(".sextant").join("rules");
+        std::fs::create_dir_all(&rules_dir).unwrap();
+        std::fs::write(
+            rules_dir.join("custom.md"),
+            r#"---
+id: repo.custom
+name: "Custom"
+description: "x"
+severity: warn
+category: style
+evaluator: { type: regex, pattern: "TODO" }
+---
+"#,
+        )
+        .unwrap();
+        let rules = repo_rules(dir.path()).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].id, "repo.custom");
+        assert_eq!(rules[0].source, RuleSource::Repo);
+    }
+
+    #[test]
+    fn repo_rules_returns_empty_when_directory_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules = repo_rules(dir.path()).unwrap();
+        assert!(rules.is_empty());
+    }
+
+    #[test]
     fn disabled_rule_is_dropped() {
         let a = parse_rule_md(
             r#"---

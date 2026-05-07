@@ -29,7 +29,7 @@ pub struct GradeArgs {
     pub fail_on: FailOn,
 }
 
-pub fn run(args: GradeArgs) -> Result<ExitCode> {
+pub(crate) fn run(args: GradeArgs) -> Result<ExitCode> {
     let cwd = std::env::current_dir().context("getting current dir")?;
     let mode = if args.diff {
         GradeMode::Diff(DiffOptions {

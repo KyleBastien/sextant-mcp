@@ -170,3 +170,66 @@ fn is_nesting_increment(node: &Node<'_>, language: Language) -> bool {
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::parse;
+
+    #[test]
+    fn rust_simple_function_is_one() {
+        let src = "fn straight() { let x = 1; let y = 2; }\n";
+        let parsed = parse(src, Language::Rust).unwrap();
+        let cs = function_complexity(&parsed).unwrap();
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].cyclomatic, 1, "{cs:?}");
+        assert_eq!(cs[0].max_nesting, 0);
+    }
+
+    #[test]
+    fn rust_branching_increments_cyclomatic_and_nesting() {
+        let src = r#"
+fn f(x: i32) -> i32 {
+    if x > 0 {
+        match x {
+            1 => 1,
+            _ => 2,
+        }
+    } else {
+        let mut i = 0;
+        while i < 10 { i += 1; }
+        for _ in 0..5 {}
+        0
+    }
+}
+"#;
+        let parsed = parse(src, Language::Rust).unwrap();
+        let cs = function_complexity(&parsed).unwrap();
+        assert_eq!(cs.len(), 1);
+        assert!(cs[0].cyclomatic >= 5, "got {}", cs[0].cyclomatic);
+        assert!(cs[0].max_nesting >= 2, "got {}", cs[0].max_nesting);
+    }
+
+    #[test]
+    fn python_branching_increments_cyclomatic_and_nesting() {
+        let src = r#"
+def f(x):
+    if x > 0:
+        return 1
+    elif x < 0:
+        try:
+            while x < 0:
+                x += 1
+            for _ in range(5):
+                pass
+        except Exception:
+            return 0
+    return 0
+"#;
+        let parsed = parse(src, Language::Python).unwrap();
+        let cs = function_complexity(&parsed).unwrap();
+        assert_eq!(cs.len(), 1);
+        assert!(cs[0].cyclomatic >= 5, "got {}", cs[0].cyclomatic);
+        assert!(cs[0].max_nesting >= 2, "got {}", cs[0].max_nesting);
+    }
+}

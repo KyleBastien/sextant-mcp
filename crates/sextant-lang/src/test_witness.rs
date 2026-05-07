@@ -88,7 +88,13 @@ fn handle_function(
     in_cfg_test: bool,
 ) {
     let is_test = attrs_indicate(attrs, state.source, "test");
-    if is_test {
+    // A function counts as part of the "test scaffolding" if it's
+    // `#[test]`-attributed itself, or if it lives inside a
+    // `#[cfg(test)]` module — that catches test helpers like `build()`,
+    // `ctx()`, and the `parsed_for_test()` factories that tests
+    // routinely delegate to. The function name we're looking for shows
+    // up there, not in the `#[test]` body itself.
+    if is_test || in_cfg_test {
         if let Some(body) = fn_node.child_by_field_name("body") {
             state
                 .out
@@ -96,9 +102,6 @@ fn handle_function(
                 .push_str(&state.source[body.byte_range()]);
             state.out.test_haystack.push('\n');
         }
-        return;
-    }
-    if in_cfg_test {
         return;
     }
     let Some(name_node) = fn_node.child_by_field_name("name") else {
@@ -259,6 +262,27 @@ mod my_tests {
         // x is found, and its mention in the test body is detected.
         assert_eq!(w.pub_fns.len(), 1);
         assert!(test_haystack_mentions(&w.test_haystack, "x"));
+    }
+
+    #[test]
+    fn includes_helpers_inside_cfg_test_mod() {
+        let src = r#"
+pub fn from_parsed(x: i32) -> i32 { x }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build() -> i32 { from_parsed(42) }
+
+    #[test]
+    fn it_works() {
+        let _ = build();
+    }
+}
+"#;
+        let w = witness(src);
+        assert!(test_haystack_mentions(&w.test_haystack, "from_parsed"));
     }
 
     #[test]

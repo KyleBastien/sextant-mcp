@@ -297,4 +297,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(explain_rule(dir.path(), "nope").unwrap().is_none());
     }
+
+    #[test]
+    fn load_config_reads_repo_local_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            ".sextant/config.toml",
+            "[size]\nfile_length_warn = 7\n",
+        );
+        let cfg = load_config(dir.path()).unwrap();
+        assert_eq!(cfg.size.file_length_warn, 7);
+    }
 }

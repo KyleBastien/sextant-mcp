@@ -85,3 +85,26 @@ impl RuleSource {
 fn default_enabled() -> bool {
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn category_name_is_lowercase_for_built_ins() {
+        assert_eq!(Category::Tests.name(), "tests");
+        assert_eq!(Category::Complexity.name(), "complexity");
+        assert_eq!(Category::Security.name(), "security");
+    }
+
+    #[test]
+    fn category_name_prefixes_custom_with_namespace() {
+        assert_eq!(Category::Custom("perf".into()).name(), "custom:perf",);
+    }
+
+    #[test]
+    fn rule_source_as_str_matches_serde_form() {
+        assert_eq!(RuleSource::Builtin.as_str(), "builtin");
+        assert_eq!(RuleSource::Repo.as_str(), "repo");
+    }
+}

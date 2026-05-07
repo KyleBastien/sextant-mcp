@@ -40,7 +40,7 @@ struct ExplainRuleArgs {
 type ToolResult = Result<Value, (i32, String)>;
 
 /// Static descriptors for every tool we serve.
-pub fn descriptors() -> Vec<Value> {
+pub(crate) fn descriptors() -> Vec<Value> {
     vec![
         descriptor_grade_diff(),
         descriptor_grade_files(),
@@ -118,7 +118,7 @@ fn descriptor_get_config() -> Value {
 
 /// Dispatch a `tools/call` request. Returns either a JSON-RPC `result` value
 /// (the MCP `CallToolResult`) or a `(code, message)` error pair.
-pub fn dispatch(name: &str, args: Value) -> ToolResult {
+pub(crate) fn dispatch(name: &str, args: Value) -> ToolResult {
     match name {
         "grade_diff" => call_grade_diff(args),
         "grade_files" => call_grade_files(args),
