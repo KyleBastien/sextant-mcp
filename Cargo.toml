@@ -6,7 +6,9 @@ members = [
     "crates/sextant-config",
     "crates/sextant-diff",
     "crates/sextant-lang",
+    "crates/sextant-engine",
     "crates/sextant-cli",
+    "crates/sextant-mcp",
 ]
 
 [workspace.package]
@@ -22,6 +24,7 @@ sextant-rules = { path = "crates/sextant-rules", version = "0.1.0" }
 sextant-config = { path = "crates/sextant-config", version = "0.1.0" }
 sextant-diff = { path = "crates/sextant-diff", version = "0.1.0" }
 sextant-lang = { path = "crates/sextant-lang", version = "0.1.0" }
+sextant-engine = { path = "crates/sextant-engine", version = "0.1.0" }
 
 anyhow = "1"
 thiserror = "1"

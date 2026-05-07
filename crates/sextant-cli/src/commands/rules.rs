@@ -2,16 +2,14 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use sextant_config::Config;
 use sextant_core::{Category, RuleSource};
-use sextant_rules::{parse_rule_md, EvaluatorSpec, RuleSet};
+use sextant_engine::{explain_rule, list_rules};
+use sextant_rules::{parse_rule_md, EvaluatorSpec};
 
 pub fn list() -> Result<ExitCode> {
     let cwd = std::env::current_dir().context("getting current dir")?;
-    let config = Config::from_repo_root(&cwd)?;
-    let ruleset = RuleSet::load(&cwd, &config).context("loading rules")?;
-    for ev in ruleset.evaluators() {
-        let r = ev.rule();
+    let rules = list_rules(&cwd).context("loading rules")?;
+    for r in rules {
         println!(
             "{}\t{}\t{}\t{}\t{}",
             r.id,
@@ -26,13 +24,10 @@ pub fn list() -> Result<ExitCode> {
 
 pub fn explain(id: &str) -> Result<ExitCode> {
     let cwd = std::env::current_dir().context("getting current dir")?;
-    let config = Config::from_repo_root(&cwd)?;
-    let ruleset = RuleSet::load(&cwd, &config).context("loading rules")?;
-    let Some(rule) = ruleset.evaluators().iter().find(|e| e.rule().id == id) else {
+    let Some(r) = explain_rule(&cwd, id).context("loading rules")? else {
         eprintln!("error: no rule with id `{id}`");
         return Ok(ExitCode::from(2));
     };
-    let r = rule.rule();
     println!("# {} ({})", r.name, r.id);
     println!();
     println!(
