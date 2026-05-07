@@ -10,6 +10,7 @@ mod complexity;
 mod duplication;
 mod file_length;
 mod fn_length;
+mod llm_rule;
 pub mod loader;
 mod param_count;
 mod pub_fn_test;
@@ -20,12 +21,14 @@ use std::sync::Arc;
 
 use sextant_config::Config;
 use sextant_core::{EvalContext, Evaluator, Finding, SourceFile};
+use sextant_judge::Judge;
 use thiserror::Error;
 
 pub use complexity::ComplexityRule;
 pub use duplication::DuplicationRule;
 pub use file_length::FileLengthRule;
 pub use fn_length::FnLengthRule;
+pub use llm_rule::{LlmRule, LlmRuleSpec};
 pub use loader::{builtin_rules, parse_rule_md, repo_rules, EvaluatorSpec, ParsedRule};
 pub use param_count::ParamCountRule;
 pub use pub_fn_test::PubFnUntestedRule;
@@ -52,12 +55,28 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
-    /// Load built-ins + repo-local rules and resolve overrides.
+    /// Load built-ins + repo-local rules and resolve overrides. LLM rules
+    /// are dropped when no judge is configured (use [`load_with`] to wire
+    /// a judge in).
     pub fn load(repo_root: &Path, config: &Config) -> Result<Self, RuleSetError> {
+        Self::load_with(repo_root, config, None)
+    }
+
+    /// Like [`load`], but with an optional `Judge`. When `judge` is
+    /// `None`, LLM-evaluated rules are skipped at load time (a single
+    /// log line per dropped rule). When `Some`, LLM rules are wired up
+    /// and runtime errors degrade to `info` findings.
+    pub fn load_with(
+        repo_root: &Path,
+        config: &Config,
+        judge: Option<Arc<Judge>>,
+    ) -> Result<Self, RuleSetError> {
         let parsed = loader::merge(loader::builtin_rules()?, loader::repo_rules(repo_root)?);
         let mut evaluators: Vec<Arc<dyn Evaluator>> = Vec::with_capacity(parsed.len());
         for rule in parsed {
-            evaluators.push(build_evaluator(rule, config)?);
+            if let Some(ev) = build_evaluator(rule, config, judge.as_ref())? {
+                evaluators.push(ev);
+            }
         }
         Ok(Self { evaluators })
     }
@@ -80,13 +99,36 @@ impl RuleSet {
     }
 }
 
-fn build_evaluator(rule: ParsedRule, config: &Config) -> Result<Arc<dyn Evaluator>, RuleSetError> {
+fn build_evaluator(
+    rule: ParsedRule,
+    config: &Config,
+    judge: Option<&Arc<Judge>>,
+) -> Result<Option<Arc<dyn Evaluator>>, RuleSetError> {
     match rule.evaluator.clone() {
-        EvaluatorSpec::Builtin { name } => build_builtin(&name, rule, config),
+        EvaluatorSpec::Builtin { name } => build_builtin(&name, rule, config).map(Some),
         EvaluatorSpec::Regex {
             pattern,
             exclude_paths,
-        } => build_regex(rule, &pattern, &exclude_paths),
+        } => build_regex(rule, &pattern, &exclude_paths).map(Some),
+        EvaluatorSpec::Llm {
+            model,
+            max_tokens,
+            temperature,
+            exclude_paths,
+            ..
+        } => {
+            let Some(judge) = judge else {
+                tracing::info!(rule = %rule.id, "skipping LLM rule: no judge configured");
+                return Ok(None);
+            };
+            let spec = LlmRuleSpec {
+                model: model.unwrap_or_else(|| config.judge.model.clone()),
+                max_tokens: max_tokens.unwrap_or(config.judge.max_tokens),
+                temperature: temperature.unwrap_or(config.judge.temperature),
+                exclude_paths,
+            };
+            build_llm(rule, Arc::clone(judge), spec).map(Some)
+        }
     }
 }
 
@@ -127,6 +169,17 @@ fn build_regex(
     Ok(Arc::new(built))
 }
 
+fn build_llm(
+    rule: ParsedRule,
+    judge: Arc<Judge>,
+    spec: LlmRuleSpec,
+) -> Result<Arc<dyn Evaluator>, RuleSetError> {
+    let id = rule.id.clone();
+    let built = LlmRule::from_parsed(rule, judge, spec)
+        .map_err(|source| RuleSetError::Regex { rule: id, source })?;
+    Ok(Arc::new(built))
+}
+
 fn rule_applies_to_file(ev: &dyn Evaluator, file: &SourceFile) -> bool {
     let rule = ev.rule();
     if !rule.enabled {
@@ -158,6 +211,38 @@ mod tests {
             .collect();
         assert!(ids.contains(&"builtin.size.file-length".to_string()));
         assert!(ids.contains(&"builtin.tests.pub-fn-untested".to_string()));
+    }
+
+    #[test]
+    fn load_with_no_judge_drops_llm_rules() {
+        // Repo with one LLM rule. With `judge = None`, it must not surface
+        // among the loaded evaluators.
+        let dir = tempfile::tempdir().unwrap();
+        let rules_dir = dir.path().join(".sextant").join("rules");
+        std::fs::create_dir_all(&rules_dir).unwrap();
+        std::fs::write(
+            rules_dir.join("llm.md"),
+            r#"---
+id: repo.llm.demo
+name: "LLM demo"
+description: "x"
+severity: warn
+category: style
+languages: [rust]
+evaluator:
+  type: llm
+---
+"#,
+        )
+        .unwrap();
+        let cfg = Config::default();
+        let set = RuleSet::load_with(dir.path(), &cfg, None).unwrap();
+        let ids: Vec<_> = set
+            .evaluators()
+            .iter()
+            .map(|e| e.rule().id.clone())
+            .collect();
+        assert!(!ids.contains(&"repo.llm.demo".to_string()));
     }
 
     #[test]

@@ -6,6 +6,8 @@
 //! `sextant-cli` and `sextant-mcp` are thin wrappers around the functions
 //! exported here.
 
+mod judge_setup;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -57,11 +59,28 @@ pub struct DiffOptions {
     pub working_tree: bool,
 }
 
+/// Engine-wide knobs that aren't tied to a specific grade invocation.
+#[derive(Debug, Clone, Default)]
+pub struct GradeOptions {
+    /// Skip LLM rules entirely. Equivalent to `[judge].enabled = false`,
+    /// but per-invocation. Maps to the CLI `--no-llm` flag.
+    pub no_llm: bool,
+}
+
 /// Grade a repo. Returns a fully-built `Report` (with verdict computed).
 pub fn grade(repo_root: &Path, mode: GradeMode) -> Result<Report, EngineError> {
+    grade_with(repo_root, mode, GradeOptions::default())
+}
+
+pub fn grade_with(
+    repo_root: &Path,
+    mode: GradeMode,
+    opts: GradeOptions,
+) -> Result<Report, EngineError> {
     let config = Config::from_repo_root(repo_root)?;
     let exclude = config.paths.matcher().map_err(EngineError::Config)?;
-    let ruleset = RuleSet::load(repo_root, &config)?;
+    let judge = judge_setup::build_judge(repo_root, &config, &opts);
+    let ruleset = RuleSet::load_with(repo_root, &config, judge)?;
     let ctx = EvalContext { repo_root };
 
     let findings = match mode {
@@ -308,5 +327,54 @@ mod tests {
         );
         let cfg = load_config(dir.path()).unwrap();
         assert_eq!(cfg.size.file_length_warn, 7);
+    }
+
+    #[test]
+    fn no_llm_skips_llm_rules_at_load_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Configure the judge as enabled so the only thing keeping LLM
+        // rules out is the --no-llm flag.
+        write(
+            root,
+            ".sextant/config.toml",
+            r#"
+[judge]
+enabled = true
+provider = "anthropic"
+api_key_env = "DEFINITELY_NOT_SET_SEXTANT_TEST"
+"#,
+        );
+        write(
+            root,
+            ".sextant/rules/example.md",
+            r#"---
+id: repo.llm.example
+name: "LLM example"
+description: "x"
+severity: warn
+category: style
+languages: [rust]
+evaluator:
+  type: llm
+---
+
+Review {{code}}.
+"#,
+        );
+        write(root, "a.rs", "fn x() {}\n");
+
+        let report = grade_with(
+            root,
+            GradeMode::Files {
+                paths: vec![root.to_path_buf()],
+            },
+            GradeOptions { no_llm: true },
+        )
+        .unwrap();
+        assert!(report
+            .findings
+            .iter()
+            .all(|f| f.rule_id != "repo.llm.example"));
     }
 }

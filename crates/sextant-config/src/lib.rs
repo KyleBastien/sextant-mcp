@@ -32,6 +32,7 @@ pub struct Config {
     pub complexity: ComplexityRuleConfig,
     pub duplication: DuplicationRuleConfig,
     pub paths: PathsConfig,
+    pub judge: JudgeConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,6 +154,52 @@ impl Default for PathsConfig {
                 "**/.git/**".into(),
                 "**/.sextant/cache/**".into(),
             ],
+        }
+    }
+}
+
+/// LLM-as-judge configuration. Defaults to disabled — projects opt in by
+/// setting `provider` to one of `anthropic`, `openai`, or `openai-compatible`.
+/// `api_key_env` names the env var holding the credential; storing the key
+/// itself in the file would be a footgun.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct JudgeConfig {
+    pub enabled: bool,
+    pub provider: JudgeProvider,
+    pub model: String,
+    pub max_tokens: u32,
+    pub temperature: f32,
+    pub api_key_env: String,
+    /// Used by `openai-compatible` to point at Ollama, vLLM, etc. The
+    /// `openai` provider also honours this if set.
+    pub base_url: Option<String>,
+    /// Cap on parallel in-flight LLM calls. Currently unused (rules run
+    /// per-file sequentially), reserved for future bounded concurrency.
+    pub max_concurrent: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum JudgeProvider {
+    #[default]
+    None,
+    Anthropic,
+    Openai,
+    OpenaiCompatible,
+}
+
+impl Default for JudgeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: JudgeProvider::None,
+            model: "claude-sonnet-4-6".into(),
+            max_tokens: 1024,
+            temperature: 0.0,
+            api_key_env: "ANTHROPIC_API_KEY".into(),
+            base_url: None,
+            max_concurrent: 4,
         }
     }
 }

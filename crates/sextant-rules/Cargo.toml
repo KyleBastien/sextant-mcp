@@ -10,6 +10,7 @@ description = "Built-in rule evaluators for Sextant"
 sextant-core = { workspace = true }
 sextant-config = { workspace = true }
 sextant-lang = { workspace = true }
+sextant-judge = { workspace = true }
 gray_matter = { workspace = true }
 rust-embed = { workspace = true }
 regex = { workspace = true }

@@ -45,6 +45,10 @@ enum Cmd {
         /// Severity at which to exit non-zero.
         #[arg(long, value_enum, default_value_t = FailOn::Error)]
         fail_on: FailOn,
+        /// Skip LLM-evaluated rules (drop them at load time). Useful for
+        /// CI runs that should never touch the network.
+        #[arg(long)]
+        no_llm: bool,
     },
     /// Rule introspection commands.
     Rules {
@@ -98,6 +102,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             working_tree,
             format,
             fail_on,
+            no_llm,
         } => commands::grade::run(GradeArgs {
             paths,
             diff,
@@ -106,6 +111,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             working_tree,
             format,
             fail_on,
+            no_llm,
         }),
         Cmd::Rules { cmd } => match cmd {
             RulesCmd::List => commands::rules::list(),
