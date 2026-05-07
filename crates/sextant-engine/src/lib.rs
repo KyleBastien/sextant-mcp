@@ -147,40 +147,43 @@ fn collect_source_files(
 ) -> Result<Vec<SourceFile>, EngineError> {
     let mut out = Vec::new();
     for target in targets {
-        let walker = WalkBuilder::new(target).standard_filters(true).build();
-        for dent in walker {
-            let dent = match dent {
-                Ok(d) => d,
-                Err(err) => {
-                    tracing::warn!(?err, "walk error");
-                    continue;
-                }
-            };
-            if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                continue;
+        for dent in WalkBuilder::new(target).standard_filters(true).build() {
+            if let Some(file) = load_walked_file(root, dent, exclude) {
+                out.push(file);
             }
-            let path = dent.into_path();
-            let rel = path.strip_prefix(root).unwrap_or(&path);
-            if exclude.is_match(rel) {
-                continue;
-            }
-            let contents = match std::fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(err) => {
-                    tracing::debug!(?err, ?path, "skipping unreadable");
-                    continue;
-                }
-            };
-            let abs = if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            };
-            out.push(SourceFile::new(abs, contents));
         }
     }
     out.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(out)
+}
+
+/// Turn one walker entry into a `SourceFile`, or `None` if it should be
+/// skipped (walk error, non-file, excluded path, unreadable contents).
+fn load_walked_file(
+    root: &Path,
+    dent: Result<ignore::DirEntry, ignore::Error>,
+    exclude: &GlobSet,
+) -> Option<SourceFile> {
+    let dent = dent
+        .inspect_err(|err| tracing::warn!(?err, "walk error"))
+        .ok()?;
+    if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
+        return None;
+    }
+    let path = dent.into_path();
+    let rel = path.strip_prefix(root).unwrap_or(&path);
+    if exclude.is_match(rel) {
+        return None;
+    }
+    let contents = std::fs::read_to_string(&path)
+        .inspect_err(|err| tracing::debug!(?err, ?path, "skipping unreadable"))
+        .ok()?;
+    let abs = if path.is_absolute() {
+        path
+    } else {
+        root.join(path)
+    };
+    Some(SourceFile::new(abs, contents))
 }
 
 /// A flat, serialization-friendly view of a `Rule`. Used by `list_rules` and

@@ -24,6 +24,23 @@ pub enum Category {
     Custom(String),
 }
 
+impl Category {
+    /// Display name for `rules list` / `rules explain` output. Custom
+    /// categories are rendered as `custom:<name>`. Built-in variants use
+    /// their serde-rendered lowercase name, which keeps this in lockstep
+    /// with the JSON wire format whenever new variants are added.
+    pub fn name(&self) -> std::borrow::Cow<'_, str> {
+        if let Category::Custom(s) = self {
+            return format!("custom:{s}").into();
+        }
+        serde_json::to_value(self)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_else(|| "unknown".into())
+            .into()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rule {
     pub id: String,

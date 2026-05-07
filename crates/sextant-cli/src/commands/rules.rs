@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use sextant_core::{Category, RuleSource};
+use sextant_core::RuleSource;
 use sextant_engine::{explain_rule, list_rules};
 use sextant_rules::{parse_rule_md, EvaluatorSpec};
 
@@ -33,7 +33,7 @@ pub fn explain(id: &str) -> Result<ExitCode> {
     println!(
         "**severity:** {}  •  **category:** {}  •  **source:** {}",
         r.severity.as_str(),
-        category_str(&r.category),
+        r.category.name(),
         r.source.as_str()
     );
     println!();
@@ -56,7 +56,7 @@ pub fn check(path: &Path) -> Result<ExitCode> {
             println!(
                 "  severity={} category={} scope={:?}",
                 rule.severity.as_str(),
-                category_str(&rule.category),
+                rule.category.name(),
                 rule.scope,
             );
             match &rule.evaluator {
@@ -73,20 +73,5 @@ pub fn check(path: &Path) -> Result<ExitCode> {
             eprintln!("error: {err}");
             Ok(ExitCode::from(2))
         }
-    }
-}
-
-fn category_str(c: &Category) -> String {
-    use Category::*;
-    match c {
-        Complexity => "complexity".into(),
-        Size => "size".into(),
-        Duplication => "duplication".into(),
-        Tests => "tests".into(),
-        Reliability => "reliability".into(),
-        Style => "style".into(),
-        Security => "security".into(),
-        Docs => "docs".into(),
-        Custom(s) => format!("custom:{s}"),
     }
 }

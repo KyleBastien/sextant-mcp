@@ -86,22 +86,24 @@ impl DiffSet {
 fn resolve_base(repo: &Repository, spec: &BaseSpec) -> DiffResult<Oid> {
     match spec {
         BaseSpec::Ref(name) => resolve_commit(repo, name),
-        BaseSpec::Auto => {
-            // Try merge-base with origin/main, then origin/master, then HEAD~1.
-            let head = repo.head()?.peel_to_commit()?.id();
-            for candidate in ["origin/main", "origin/master"] {
-                if let Ok(other) = resolve_commit(repo, candidate) {
-                    if let Ok(mb) = repo.merge_base(head, other) {
-                        return Ok(mb);
-                    }
-                }
-            }
-            if let Ok(parent) = resolve_commit(repo, "HEAD~1") {
-                return Ok(parent);
-            }
-            Err(DiffError::NoDefaultBase)
+        BaseSpec::Auto => auto_base(repo),
+    }
+}
+
+/// Try `merge-base origin/main HEAD`, then `origin/master`, then `HEAD~1`.
+fn auto_base(repo: &Repository) -> DiffResult<Oid> {
+    let head = repo.head()?.peel_to_commit()?.id();
+    for candidate in ["origin/main", "origin/master"] {
+        if let Some(mb) = try_merge_base(repo, head, candidate) {
+            return Ok(mb);
         }
     }
+    resolve_commit(repo, "HEAD~1").map_err(|_| DiffError::NoDefaultBase)
+}
+
+fn try_merge_base(repo: &Repository, head: Oid, candidate: &str) -> Option<Oid> {
+    let other = resolve_commit(repo, candidate).ok()?;
+    repo.merge_base(head, other).ok()
 }
 
 fn resolve_commit(repo: &Repository, name: &str) -> DiffResult<Oid> {
@@ -123,34 +125,44 @@ pub fn compute(repo_root: &Path, base: &BaseSpec, head: &HeadSpec) -> DiffResult
     let repo = Repository::discover(repo_root)?;
     let base_oid = resolve_base(&repo, base)?;
     let base_tree = tree_for(&repo, base_oid)?;
+    let mut diff_opts = default_diff_opts();
 
-    let mut diff_opts = DiffOptions::new();
-    diff_opts
-        .include_untracked(true)
-        .recurse_untracked_dirs(true)
-        .show_untracked_content(true)
-        .context_lines(0);
-
-    let (diff, head_oid) = match head {
-        HeadSpec::WorkingTree => {
-            let d = repo.diff_tree_to_workdir_with_index(Some(&base_tree), Some(&mut diff_opts))?;
-            (d, None)
-        }
-        HeadSpec::Ref(name) => {
-            let head_oid = resolve_commit(&repo, name)?;
-            let head_tree = tree_for(&repo, head_oid)?;
-            let d =
-                repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_opts))?;
-            (d, Some(head_oid))
-        }
-    };
-
+    let (diff, head_oid) = build_diff(&repo, &base_tree, head, &mut diff_opts)?;
     let files = collect_files(&repo, repo_root, &diff, head)?;
     Ok(DiffSet {
         base_oid,
         head_oid,
         files,
     })
+}
+
+fn default_diff_opts() -> DiffOptions {
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .show_untracked_content(true)
+        .context_lines(0);
+    opts
+}
+
+fn build_diff<'repo>(
+    repo: &'repo Repository,
+    base_tree: &Tree<'repo>,
+    head: &HeadSpec,
+    opts: &mut DiffOptions,
+) -> DiffResult<(Diff<'repo>, Option<Oid>)> {
+    match head {
+        HeadSpec::WorkingTree => {
+            let d = repo.diff_tree_to_workdir_with_index(Some(base_tree), Some(opts))?;
+            Ok((d, None))
+        }
+        HeadSpec::Ref(name) => {
+            let head_oid = resolve_commit(repo, name)?;
+            let head_tree = tree_for(repo, head_oid)?;
+            let d = repo.diff_tree_to_tree(Some(base_tree), Some(&head_tree), Some(opts))?;
+            Ok((d, Some(head_oid)))
+        }
+    }
 }
 
 fn delta_path(delta: &git2::DiffDelta<'_>) -> PathBuf {
@@ -228,28 +240,38 @@ fn read_head(
     head: &HeadSpec,
 ) -> DiffResult<Option<String>> {
     match head {
-        HeadSpec::WorkingTree => {
-            let abs = repo_root.join(path);
-            match std::fs::read_to_string(&abs) {
-                Ok(s) => Ok(Some(s)),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-                Err(err) if err.kind() == std::io::ErrorKind::InvalidData => Ok(None),
-                Err(err) => Err(err.into()),
-            }
+        HeadSpec::WorkingTree => read_workdir(repo_root, path),
+        HeadSpec::Ref(name) => read_blob_at_ref(repo, name, path),
+    }
+}
+
+fn read_workdir(repo_root: &Path, path: &Path) -> DiffResult<Option<String>> {
+    let abs = repo_root.join(path);
+    match std::fs::read_to_string(&abs) {
+        Ok(s) => Ok(Some(s)),
+        // NotFound = file deleted in workdir but still in tree; InvalidData
+        // = binary or non-UTF-8 content. Both should yield None rather than
+        // bubble up an error — the caller treats absent contents as "skip".
+        Err(err)
+            if err.kind() == std::io::ErrorKind::NotFound
+                || err.kind() == std::io::ErrorKind::InvalidData =>
+        {
+            Ok(None)
         }
-        HeadSpec::Ref(name) => {
-            let oid = resolve_commit(repo, name)?;
-            let tree = tree_for(repo, oid)?;
-            let entry = match tree.get_path(path) {
-                Ok(e) => e,
-                Err(_) => return Ok(None),
-            };
-            let blob = entry.to_object(repo)?.peel_to_blob()?;
-            match std::str::from_utf8(blob.content()) {
-                Ok(s) => Ok(Some(s.to_string())),
-                Err(_) => Ok(None),
-            }
-        }
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn read_blob_at_ref(repo: &Repository, name: &str, path: &Path) -> DiffResult<Option<String>> {
+    let oid = resolve_commit(repo, name)?;
+    let tree = tree_for(repo, oid)?;
+    let Ok(entry) = tree.get_path(path) else {
+        return Ok(None);
+    };
+    let blob = entry.to_object(repo)?.peel_to_blob()?;
+    match std::str::from_utf8(blob.content()) {
+        Ok(s) => Ok(Some(s.to_string())),
+        Err(_) => Ok(None),
     }
 }
 
