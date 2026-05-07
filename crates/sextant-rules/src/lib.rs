@@ -7,6 +7,7 @@
 //! use `evaluator: { type: regex, ... }` and require no Rust code at all.
 
 mod complexity;
+mod duplication;
 mod file_length;
 mod fn_length;
 pub mod loader;
@@ -20,7 +21,8 @@ use sextant_config::Config;
 use sextant_core::{EvalContext, Evaluator, Finding, SourceFile};
 use thiserror::Error;
 
-pub use complexity::{CyclomaticRule, NestingRule};
+pub use complexity::ComplexityRule;
+pub use duplication::DuplicationRule;
 pub use file_length::FileLengthRule;
 pub use fn_length::FnLengthRule;
 pub use loader::{builtin_rules, parse_rule_md, repo_rules, EvaluatorSpec, ParsedRule};
@@ -95,11 +97,15 @@ fn build_builtin(
         "file_length" => Ok(Arc::new(FileLengthRule::from_parsed(rule, &config.size))),
         "fn_length" => Ok(Arc::new(FnLengthRule::from_parsed(rule, &config.size))),
         "param_count" => Ok(Arc::new(ParamCountRule::from_parsed(rule, &config.size))),
-        "cyclomatic" => Ok(Arc::new(CyclomaticRule::from_parsed(
+        "cyclomatic" => Ok(Arc::new(ComplexityRule::cyclomatic(
             rule,
             &config.complexity,
         ))),
-        "nesting" => Ok(Arc::new(NestingRule::from_parsed(rule, &config.complexity))),
+        "nesting" => Ok(Arc::new(ComplexityRule::nesting(rule, &config.complexity))),
+        "tokens_dup" => Ok(Arc::new(DuplicationRule::from_parsed(
+            rule,
+            &config.duplication,
+        ))),
         other => Err(RuleSetError::UnknownBuiltin {
             rule: rule.id,
             name: other.to_string(),

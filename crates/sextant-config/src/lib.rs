@@ -30,6 +30,7 @@ pub struct Config {
     pub verdict: VerdictSection,
     pub size: SizeRuleConfig,
     pub complexity: ComplexityRuleConfig,
+    pub duplication: DuplicationRuleConfig,
     pub paths: PathsConfig,
 }
 
@@ -102,6 +103,26 @@ impl Default for ComplexityRuleConfig {
             nesting_warn: 4,
             nesting_error: 6,
         }
+    }
+}
+
+/// Per-rule thresholds for the built-in duplication detector.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DuplicationRuleConfig {
+    /// Minimum token-window size that qualifies as a clone. Smaller values
+    /// catch more (and noisier) duplication; larger values flag only
+    /// substantial copy-paste. The default is calibrated to roughly the
+    /// "10 lines of typical code" mark.
+    pub min_tokens: u32,
+}
+
+impl Default for DuplicationRuleConfig {
+    fn default() -> Self {
+        // 100 tokens is roughly 20 lines of typical code — what other
+        // duplication tools (Sonar, CodeScene) calibrate "substantial"
+        // duplication to. Lower it to surface more, raise it for less noise.
+        Self { min_tokens: 100 }
     }
 }
 
