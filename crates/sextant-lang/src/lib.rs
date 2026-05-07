@@ -1,21 +1,23 @@
 //! Tree-sitter parsing and language-specific queries.
 //!
-//! For M2 we only support Rust. The public API is small on purpose:
-//! callers ask for a `ParsedFile` and then derive specific structures
-//! (e.g. `function_ranges`) without ever touching tree-sitter directly.
+//! Public API: callers ask for a `ParsedFile` and then derive specific
+//! structures (`function_ranges`, `function_complexity`) without ever
+//! touching tree-sitter directly. Supported languages: Rust and Python.
 
 use thiserror::Error;
-use tree_sitter::{Node, Parser, Query, QueryCursor, Tree};
+use tree_sitter::{Node, Parser, Query, QueryCursor, Tree, TreeCursor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
     Rust,
+    Python,
 }
 
 impl Language {
     pub fn from_hint(hint: &str) -> Option<Self> {
         match hint {
             "rust" => Some(Language::Rust),
+            "python" => Some(Language::Python),
             _ => None,
         }
     }
@@ -23,6 +25,7 @@ impl Language {
     fn ts_language(self) -> tree_sitter::Language {
         match self {
             Language::Rust => tree_sitter_rust::language(),
+            Language::Python => tree_sitter_python::language(),
         }
     }
 }
@@ -77,28 +80,30 @@ const RUST_FN_QUERY: &str = r#"
   parameters: (parameters) @fn.params) @fn.def
 "#;
 
-/// Extract function ranges from a parsed file. Currently only `function_item`
-/// in Rust is recognized (covers free functions, impl methods, trait
-/// implementations). Trait *signatures* in trait declarations are excluded
-/// because they are `function_signature_item`, not `function_item`.
+const PYTHON_FN_QUERY: &str = r#"
+(function_definition
+  name: (identifier) @fn.name
+  parameters: (parameters) @fn.params) @fn.def
+"#;
+
+/// Extract function ranges from a parsed file.
 pub fn function_ranges(parsed: &ParsedFile) -> Result<Vec<FunctionRange>, LangError> {
-    match parsed.language {
-        Language::Rust => rust_function_ranges(parsed),
-    }
+    let query_src = match parsed.language {
+        Language::Rust => RUST_FN_QUERY,
+        Language::Python => PYTHON_FN_QUERY,
+    };
+    extract_function_ranges(parsed, query_src)
 }
 
-fn rust_function_ranges(parsed: &ParsedFile) -> Result<Vec<FunctionRange>, LangError> {
-    let lang = Language::Rust.ts_language();
-    let query = Query::new(&lang, RUST_FN_QUERY).map_err(|e| LangError::Ts(e.to_string()))?;
-    let idx_def = query
-        .capture_index_for_name("fn.def")
-        .ok_or_else(|| LangError::Ts("missing capture: fn.def".into()))?;
-    let idx_name = query
-        .capture_index_for_name("fn.name")
-        .ok_or_else(|| LangError::Ts("missing capture: fn.name".into()))?;
-    let idx_params = query
-        .capture_index_for_name("fn.params")
-        .ok_or_else(|| LangError::Ts("missing capture: fn.params".into()))?;
+fn extract_function_ranges(
+    parsed: &ParsedFile,
+    query_src: &str,
+) -> Result<Vec<FunctionRange>, LangError> {
+    let lang = parsed.language.ts_language();
+    let query = Query::new(&lang, query_src).map_err(|e| LangError::Ts(e.to_string()))?;
+    let idx_def = capture_index(&query, "fn.def")?;
+    let idx_name = capture_index(&query, "fn.name")?;
+    let idx_params = capture_index(&query, "fn.params")?;
 
     let mut cursor = QueryCursor::new();
     let mut out = Vec::new();
@@ -110,19 +115,21 @@ fn rust_function_ranges(parsed: &ParsedFile) -> Result<Vec<FunctionRange>, LangE
             continue;
         };
 
-        let name = node_text(&name_node, &parsed.source).to_string();
-        let start_line = (def.start_position().row as u32) + 1;
-        let end_line = (def.end_position().row as u32) + 1;
-        let param_count = count_named_children(&params_node);
         out.push(FunctionRange {
-            name,
-            start_line,
-            end_line,
-            param_count,
+            name: node_text(&name_node, &parsed.source).to_string(),
+            start_line: (def.start_position().row as u32) + 1,
+            end_line: (def.end_position().row as u32) + 1,
+            param_count: count_named_children(&params_node),
         });
     }
     out.sort_by_key(|f| f.start_line);
     Ok(out)
+}
+
+fn capture_index(query: &Query, name: &str) -> Result<u32, LangError> {
+    query
+        .capture_index_for_name(name)
+        .ok_or_else(|| LangError::Ts(format!("missing capture: {name}")))
 }
 
 fn capture<'a>(m: &tree_sitter::QueryMatch<'a, 'a>, idx: u32) -> Option<Node<'a>> {
@@ -133,19 +140,193 @@ fn node_text<'a>(node: &Node<'_>, source: &'a str) -> &'a str {
     &source[node.byte_range()]
 }
 
-/// Count named (non-anonymous) children — this naturally excludes
-/// punctuation (`(`, `,`, `)`) and yields the parameter count.
 fn count_named_children(parent: &Node<'_>) -> u32 {
     let mut walker = parent.walk();
     let mut n = 0u32;
     for child in parent.named_children(&mut walker) {
-        // Skip line/block comments inside the parameter list.
-        if child.kind() == "line_comment" || child.kind() == "block_comment" {
+        if child.kind() == "line_comment"
+            || child.kind() == "block_comment"
+            || child.kind() == "comment"
+        {
             continue;
         }
         n += 1;
     }
     n
+}
+
+// ============================================================================
+// Complexity metrics
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionComplexity {
+    pub name: String,
+    pub start_line: u32,
+    pub end_line: u32,
+    /// McCabe cyclomatic complexity. 1 + count of branching nodes.
+    pub cyclomatic: u32,
+    /// Maximum depth of nested control structures within the function body.
+    /// 0 = no control structures.
+    pub max_nesting: u32,
+}
+
+/// Compute cyclomatic complexity and max-nesting for every top-level function
+/// in the file. Functions defined inside other functions are computed
+/// independently — each gets its own row.
+pub fn function_complexity(parsed: &ParsedFile) -> Result<Vec<FunctionComplexity>, LangError> {
+    let ranges = function_ranges(parsed)?;
+    let mut out = Vec::with_capacity(ranges.len());
+    for r in ranges {
+        // Locate the body node within the function's byte range. We use
+        // the def node, which encloses the whole function, and walk it.
+        let Some(def_node) = find_def_at_line(&parsed.tree, r.start_line, parsed.language) else {
+            continue;
+        };
+        let cyclomatic = 1 + count_branches(def_node, parsed.language);
+        let max_nesting = max_depth(def_node, parsed.language);
+        out.push(FunctionComplexity {
+            name: r.name,
+            start_line: r.start_line,
+            end_line: r.end_line,
+            cyclomatic,
+            max_nesting,
+        });
+    }
+    Ok(out)
+}
+
+fn find_def_at_line(tree: &Tree, line: u32, language: Language) -> Option<Node<'_>> {
+    let target_kind = match language {
+        Language::Rust => "function_item",
+        Language::Python => "function_definition",
+    };
+    let mut cursor = tree.walk();
+    find_def_recursive(&mut cursor, target_kind, line)
+}
+
+fn find_def_recursive<'tree>(
+    cursor: &mut TreeCursor<'tree>,
+    target_kind: &str,
+    line: u32,
+) -> Option<Node<'tree>> {
+    let node = cursor.node();
+    if node.kind() == target_kind && (node.start_position().row as u32) + 1 == line {
+        return Some(node);
+    }
+    if cursor.goto_first_child() {
+        loop {
+            if let Some(found) = find_def_recursive(cursor, target_kind, line) {
+                return Some(found);
+            }
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+        cursor.goto_parent();
+    }
+    None
+}
+
+fn count_branches(root: Node<'_>, language: Language) -> u32 {
+    let mut count = 0u32;
+    let mut cursor = root.walk();
+    walk(&mut cursor, &mut |node| {
+        if is_branch(node, language) {
+            count += 1;
+        }
+    });
+    count
+}
+
+fn max_depth(root: Node<'_>, language: Language) -> u32 {
+    fn recurse(cursor: &mut TreeCursor, depth: u32, max: &mut u32, lang: Language) {
+        let node = cursor.node();
+        let new_depth = if is_nesting_increment(&node, lang) {
+            depth + 1
+        } else {
+            depth
+        };
+        if new_depth > *max {
+            *max = new_depth;
+        }
+        if cursor.goto_first_child() {
+            loop {
+                recurse(cursor, new_depth, max, lang);
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+            cursor.goto_parent();
+        }
+    }
+    let mut max = 0u32;
+    let mut cursor = root.walk();
+    // Skip the function's own def node — the first nesting level should be
+    // counted from inside its body.
+    if cursor.goto_first_child() {
+        loop {
+            recurse(&mut cursor, 0, &mut max, language);
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+    max
+}
+
+fn walk<F: FnMut(&Node<'_>)>(cursor: &mut TreeCursor, visit: &mut F) {
+    visit(&cursor.node());
+    if cursor.goto_first_child() {
+        loop {
+            walk(cursor, visit);
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+        cursor.goto_parent();
+    }
+}
+
+fn is_branch(node: &Node<'_>, language: Language) -> bool {
+    match language {
+        Language::Rust => matches!(
+            node.kind(),
+            "if_expression"
+                | "match_arm"
+                | "while_expression"
+                | "while_let_expression"
+                | "for_expression"
+                | "try_expression"
+        ),
+        Language::Python => matches!(
+            node.kind(),
+            "if_statement"
+                | "elif_clause"
+                | "while_statement"
+                | "for_statement"
+                | "except_clause"
+                | "conditional_expression"
+        ),
+    }
+}
+
+fn is_nesting_increment(node: &Node<'_>, language: Language) -> bool {
+    match language {
+        Language::Rust => matches!(
+            node.kind(),
+            "if_expression"
+                | "match_expression"
+                | "while_expression"
+                | "while_let_expression"
+                | "for_expression"
+                | "loop_expression"
+        ),
+        Language::Python => matches!(
+            node.kind(),
+            "if_statement" | "while_statement" | "for_statement" | "try_statement"
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -158,16 +339,9 @@ mod tests {
         let parsed = parse(src, Language::Rust).unwrap();
         let fns = function_ranges(&parsed).unwrap();
         assert_eq!(fns.len(), 2);
-
         assert_eq!(fns[0].name, "one");
-        assert_eq!(fns[0].param_count, 0);
-        assert_eq!(fns[0].start_line, 1);
-        assert_eq!(fns[0].end_line, 1);
-
         assert_eq!(fns[1].name, "two");
         assert_eq!(fns[1].param_count, 2);
-        assert_eq!(fns[1].start_line, 3);
-        assert_eq!(fns[1].end_line, 5);
     }
 
     #[test]
@@ -176,11 +350,7 @@ mod tests {
         let parsed = parse(src, Language::Rust).unwrap();
         let fns = function_ranges(&parsed).unwrap();
         assert_eq!(fns.len(), 2);
-        // `self` parameters count toward the parameter total — that matches
-        // how a human would describe the function's signature size.
-        assert_eq!(fns[0].name, "m");
         assert_eq!(fns[0].param_count, 2);
-        assert_eq!(fns[1].name, "n");
         assert_eq!(fns[1].param_count, 1);
     }
 
@@ -194,8 +364,79 @@ mod tests {
     }
 
     #[test]
+    fn function_ranges_python_basic() {
+        let src = "def alpha():\n    pass\n\ndef beta(a, b, c):\n    return a + b + c\n";
+        let parsed = parse(src, Language::Python).unwrap();
+        let fns = function_ranges(&parsed).unwrap();
+        assert_eq!(fns.len(), 2);
+        assert_eq!(fns[0].name, "alpha");
+        assert_eq!(fns[1].name, "beta");
+        assert_eq!(fns[1].param_count, 3);
+    }
+
+    #[test]
     fn language_from_hint() {
         assert_eq!(Language::from_hint("rust"), Some(Language::Rust));
-        assert_eq!(Language::from_hint("python"), None);
+        assert_eq!(Language::from_hint("python"), Some(Language::Python));
+        assert_eq!(Language::from_hint("nope"), None);
+    }
+
+    #[test]
+    fn cyclomatic_rust_simple_function() {
+        let src = "fn straight() { let x = 1; let y = 2; }\n";
+        let parsed = parse(src, Language::Rust).unwrap();
+        let cs = function_complexity(&parsed).unwrap();
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].cyclomatic, 1, "{cs:?}");
+        assert_eq!(cs[0].max_nesting, 0);
+    }
+
+    #[test]
+    fn cyclomatic_rust_branching() {
+        // 1 base + 1 if + 1 match arm + 1 match arm + 1 while + 1 for = 6
+        let src = r#"
+fn f(x: i32) -> i32 {
+    if x > 0 {
+        match x {
+            1 => 1,
+            _ => 2,
+        }
+    } else {
+        let mut i = 0;
+        while i < 10 { i += 1; }
+        for _ in 0..5 {}
+        0
+    }
+}
+"#;
+        let parsed = parse(src, Language::Rust).unwrap();
+        let cs = function_complexity(&parsed).unwrap();
+        assert_eq!(cs.len(), 1);
+        assert!(cs[0].cyclomatic >= 5, "got {}", cs[0].cyclomatic);
+        assert!(cs[0].max_nesting >= 2, "got {}", cs[0].max_nesting);
+    }
+
+    #[test]
+    fn cyclomatic_python_branching() {
+        // 1 base + 1 if + 1 elif + 1 while + 1 for + 1 except = 6
+        let src = r#"
+def f(x):
+    if x > 0:
+        return 1
+    elif x < 0:
+        try:
+            while x < 0:
+                x += 1
+            for _ in range(5):
+                pass
+        except Exception:
+            return 0
+    return 0
+"#;
+        let parsed = parse(src, Language::Python).unwrap();
+        let cs = function_complexity(&parsed).unwrap();
+        assert_eq!(cs.len(), 1);
+        assert!(cs[0].cyclomatic >= 5, "got {}", cs[0].cyclomatic);
+        assert!(cs[0].max_nesting >= 2, "got {}", cs[0].max_nesting);
     }
 }

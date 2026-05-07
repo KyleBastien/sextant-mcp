@@ -6,6 +6,7 @@
 //! Rust evaluator. Repo-local rules under `<root>/.sextant/rules/**/*.md`
 //! use `evaluator: { type: regex, ... }` and require no Rust code at all.
 
+mod complexity;
 mod file_length;
 mod fn_length;
 pub mod loader;
@@ -19,6 +20,7 @@ use sextant_config::Config;
 use sextant_core::{EvalContext, Evaluator, Finding, SourceFile};
 use thiserror::Error;
 
+pub use complexity::{CyclomaticRule, NestingRule};
 pub use file_length::FileLengthRule;
 pub use fn_length::FnLengthRule;
 pub use loader::{builtin_rules, parse_rule_md, repo_rules, EvaluatorSpec, ParsedRule};
@@ -80,6 +82,11 @@ fn build_evaluator(rule: ParsedRule, config: &Config) -> Result<Arc<dyn Evaluato
             "file_length" => Ok(Arc::new(FileLengthRule::from_parsed(rule, &config.size))),
             "fn_length" => Ok(Arc::new(FnLengthRule::from_parsed(rule, &config.size))),
             "param_count" => Ok(Arc::new(ParamCountRule::from_parsed(rule, &config.size))),
+            "cyclomatic" => Ok(Arc::new(CyclomaticRule::from_parsed(
+                rule,
+                &config.complexity,
+            ))),
+            "nesting" => Ok(Arc::new(NestingRule::from_parsed(rule, &config.complexity))),
             other => Err(RuleSetError::UnknownBuiltin {
                 rule: rule.id,
                 name: other.to_string(),

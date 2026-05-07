@@ -9,6 +9,7 @@ description = "Tree-sitter parsers and queries for Sextant"
 [dependencies]
 tree-sitter = { workspace = true }
 tree-sitter-rust = { workspace = true }
+tree-sitter-python = { workspace = true }
 thiserror = { workspace = true }
 
 [lints]

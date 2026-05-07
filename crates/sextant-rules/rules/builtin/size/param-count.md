@@ -5,7 +5,7 @@ description: "Functions that take more than the configured number of parameters.
 severity: warn
 category: size
 scope: file
-languages: [rust]
+languages: [rust, python]
 evaluator:
   type: builtin
   name: param_count
