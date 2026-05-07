@@ -993,15 +993,12 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "clap",
- "globset",
- "ignore",
  "insta",
  "predicates",
  "serde",
  "serde_json",
- "sextant-config",
  "sextant-core",
- "sextant-diff",
+ "sextant-engine",
  "sextant-rules",
  "tempfile",
  "tracing",
@@ -1040,12 +1037,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "sextant-engine"
+version = "0.1.0"
+dependencies = [
+ "globset",
+ "ignore",
+ "serde",
+ "sextant-config",
+ "sextant-core",
+ "sextant-diff",
+ "sextant-rules",
+ "tempfile",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "sextant-lang"
 version = "0.1.0"
 dependencies = [
  "thiserror",
  "tree-sitter",
  "tree-sitter-rust",
+]
+
+[[package]]
+name = "sextant-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "sextant-core",
+ "sextant-engine",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
