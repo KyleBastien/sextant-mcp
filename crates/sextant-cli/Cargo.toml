@@ -14,6 +14,7 @@ path = "src/main.rs"
 sextant-core = { workspace = true }
 sextant-config = { workspace = true }
 sextant-rules = { workspace = true }
+sextant-diff = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }

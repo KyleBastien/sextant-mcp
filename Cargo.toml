@@ -4,6 +4,8 @@ members = [
     "crates/sextant-core",
     "crates/sextant-rules",
     "crates/sextant-config",
+    "crates/sextant-diff",
+    "crates/sextant-lang",
     "crates/sextant-cli",
 ]
 
@@ -18,6 +20,8 @@ rust-version = "1.75"
 sextant-core = { path = "crates/sextant-core", version = "0.1.0" }
 sextant-rules = { path = "crates/sextant-rules", version = "0.1.0" }
 sextant-config = { path = "crates/sextant-config", version = "0.1.0" }
+sextant-diff = { path = "crates/sextant-diff", version = "0.1.0" }
+sextant-lang = { path = "crates/sextant-lang", version = "0.1.0" }
 
 anyhow = "1"
 thiserror = "1"
@@ -28,6 +32,9 @@ clap = { version = "4", features = ["derive"] }
 ignore = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+git2 = { version = "0.19", default-features = false }
+tree-sitter = "0.22"
+tree-sitter-rust = "0.21"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

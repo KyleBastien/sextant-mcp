@@ -1,10 +1,13 @@
 //! Built-in rule evaluators for Sextant.
 //!
-//! In M1 only `builtin.size.file-length` is implemented. Later milestones
-//! will add complexity, duplication, and tests rules; rule discovery via
-//! `rust-embed` and frontmatter parsing arrives in M3.
+//! M2 adds two AST-based rules backed by `sextant-lang`: `fn-length` and
+//! `param-count`. Later milestones will add complexity, duplication, and
+//! tests rules; rule discovery via `rust-embed` and frontmatter parsing
+//! arrives in M3.
 
 mod file_length;
+mod fn_length;
+mod param_count;
 
 use std::sync::Arc;
 
@@ -12,6 +15,8 @@ use sextant_config::Config;
 use sextant_core::{EvalContext, Evaluator, Finding, SourceFile};
 
 pub use file_length::FileLengthRule;
+pub use fn_length::FnLengthRule;
+pub use param_count::ParamCountRule;
 
 /// A bundle of evaluators discovered from built-ins + (later) the repo's
 /// `.sextant/rules/` directory.
@@ -21,8 +26,11 @@ pub struct RuleSet {
 
 impl RuleSet {
     pub fn builtin(config: &Config) -> Self {
-        let evaluators: Vec<Arc<dyn Evaluator>> =
-            vec![Arc::new(FileLengthRule::from_config(&config.size))];
+        let evaluators: Vec<Arc<dyn Evaluator>> = vec![
+            Arc::new(FileLengthRule::from_config(&config.size)),
+            Arc::new(FnLengthRule::from_config(&config.size)),
+            Arc::new(ParamCountRule::from_config(&config.size)),
+        ];
         Self { evaluators }
     }
 
