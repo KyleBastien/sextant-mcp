@@ -12,6 +12,7 @@ mod file_length;
 mod fn_length;
 pub mod loader;
 mod param_count;
+mod pub_fn_test;
 mod regex_rule;
 
 use std::path::Path;
@@ -27,6 +28,7 @@ pub use file_length::FileLengthRule;
 pub use fn_length::FnLengthRule;
 pub use loader::{builtin_rules, parse_rule_md, repo_rules, EvaluatorSpec, ParsedRule};
 pub use param_count::ParamCountRule;
+pub use pub_fn_test::PubFnUntestedRule;
 pub use regex_rule::{RegexBuildError, RegexRule};
 
 #[derive(Debug, Error)]
@@ -106,6 +108,7 @@ fn build_builtin(
             rule,
             &config.duplication,
         ))),
+        "pub_fn_untested" => Ok(Arc::new(PubFnUntestedRule::from_parsed(rule))),
         other => Err(RuleSetError::UnknownBuiltin {
             rule: rule.id,
             name: other.to_string(),

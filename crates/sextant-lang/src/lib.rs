@@ -8,11 +8,13 @@ mod clones;
 mod complexity;
 mod parser;
 mod ranges;
+mod test_witness;
 
 pub use clones::{find_clones, ClonePair, CloneSpan};
 pub use complexity::{function_complexity, FunctionComplexity};
 pub use parser::{parse, LangError, Language, ParsedFile};
 pub use ranges::{function_ranges, FunctionRange};
+pub use test_witness::{rust_test_witness, test_haystack_mentions, PubFnInfo, TestWitness};
 
 #[cfg(test)]
 mod tests {
