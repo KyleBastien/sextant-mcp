@@ -19,44 +19,25 @@ fn init_repo(dir: &std::path::Path) {
     git(dir, &["config", "commit.gpgsign", "false"]);
 }
 
-/// Diff mode: initialize a repo with a clean baseline, then add a long
-/// function in a follow-up commit. The grader should fire on the new
-/// function but not on a pre-existing long function.
-#[test]
-fn diff_mode_only_grades_changed_lines() {
-    let dir = tempdir().unwrap();
-    let root = dir.path();
-    init_repo(root);
+fn long_fn(name: &str) -> String {
+    let body: String = (1..=10).map(|i| format!("    {i};\n")).collect();
+    format!("fn {name}() {{\n{body}}}\n")
+}
 
-    // .sextant/config.toml — tight thresholds.
+fn write_config(root: &std::path::Path, body: &str) {
     let cfg_dir = root.join(".sextant");
     std::fs::create_dir_all(&cfg_dir).unwrap();
-    std::fs::write(
-        cfg_dir.join("config.toml"),
-        "[size]\nfile_length_warn = 10000\nfile_length_error = 20000\n\
-         fn_length_warn = 4\nfn_length_error = 8\n\
-         param_count_warn = 100\nparam_count_error = 200\n",
-    )
-    .unwrap();
+    std::fs::write(cfg_dir.join("config.toml"), body).unwrap();
+}
 
-    // Baseline: a long function already exists.
-    let baseline = "fn pre_existing() {\n    1;\n    2;\n    3;\n    4;\n    5;\n    6;\n    7;\n    8;\n    9;\n    10;\n}\n";
-    std::fs::write(root.join("lib.rs"), baseline).unwrap();
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "baseline"]);
-
-    // Now add a NEW long function (≥8 lines). The pre-existing one should
-    // be ignored because diff mode only counts touched lines.
-    let with_new = format!("{baseline}\nfn newly_added() {{\n    1;\n    2;\n    3;\n    4;\n    5;\n    6;\n    7;\n    8;\n    9;\n    10;\n}}\n");
-    std::fs::write(root.join("lib.rs"), with_new).unwrap();
-
-    let output = Command::cargo_bin("sextant")
+fn run_diff_grade_json(root: &std::path::Path, base: &str) -> serde_json::Value {
+    let out = Command::cargo_bin("sextant")
         .unwrap()
         .args([
             "grade",
             "--diff",
             "--base",
-            "HEAD",
+            base,
             "--format",
             "json",
             "--fail-on",
@@ -65,32 +46,55 @@ fn diff_mode_only_grades_changed_lines() {
         .current_dir(root)
         .output()
         .expect("running sextant");
-
     assert!(
-        output.status.success(),
+        out.status.success(),
         "stderr:\n{}\nstdout:\n{}",
-        String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout),
+    );
+    serde_json::from_slice(&out.stdout).expect("valid json")
+}
+
+/// Diff mode: initialize a repo with a clean baseline, then add a long
+/// function in a follow-up commit. The grader should fire on the new
+/// function but not on a pre-existing long function.
+#[test]
+fn diff_mode_only_grades_changed_lines() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    write_config(
+        root,
+        "[size]\nfile_length_warn = 10000\nfile_length_error = 20000\n\
+         fn_length_warn = 4\nfn_length_error = 8\n\
+         param_count_warn = 100\nparam_count_error = 200\n",
     );
 
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
-    let findings = parsed.get("findings").and_then(|f| f.as_array()).unwrap();
+    let baseline = long_fn("pre_existing");
+    std::fs::write(root.join("lib.rs"), &baseline).unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "baseline"]);
+
+    // Add a NEW long function. The pre-existing one should be ignored.
+    let with_new = format!("{baseline}\n{}", long_fn("newly_added"));
+    std::fs::write(root.join("lib.rs"), with_new).unwrap();
+
+    let report = run_diff_grade_json(root, "HEAD");
+    let findings = report.get("findings").and_then(|f| f.as_array()).unwrap();
+    let has = |name: &str| {
+        findings.iter().any(|f| {
+            f.get("message")
+                .and_then(|m| m.as_str())
+                .is_some_and(|s| s.contains(name))
+        })
+    };
     assert!(
-        findings.iter().any(|f| f
-            .get("message")
-            .and_then(|m| m.as_str())
-            .map(|s| s.contains("newly_added"))
-            .unwrap_or(false)),
-        "expected `newly_added` to be flagged; findings: {findings:?}",
+        has("newly_added"),
+        "expected `newly_added`; got: {findings:?}"
     );
     assert!(
-        !findings.iter().any(|f| f
-            .get("message")
-            .and_then(|m| m.as_str())
-            .map(|s| s.contains("pre_existing"))
-            .unwrap_or(false)),
-        "did NOT expect `pre_existing` to be flagged in diff mode; findings: {findings:?}",
+        !has("pre_existing"),
+        "did NOT expect `pre_existing`; got: {findings:?}"
     );
 }
 
