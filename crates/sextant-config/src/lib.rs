@@ -29,6 +29,7 @@ pub enum ConfigError {
 pub struct Config {
     pub verdict: VerdictSection,
     pub size: SizeRuleConfig,
+    pub complexity: ComplexityRuleConfig,
     pub paths: PathsConfig,
 }
 
@@ -79,6 +80,27 @@ impl Default for SizeRuleConfig {
             fn_length_error: 120,
             param_count_warn: 6,
             param_count_error: 10,
+        }
+    }
+}
+
+/// Per-rule thresholds for the built-in complexity rules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ComplexityRuleConfig {
+    pub cyclomatic_warn: u32,
+    pub cyclomatic_error: u32,
+    pub nesting_warn: u32,
+    pub nesting_error: u32,
+}
+
+impl Default for ComplexityRuleConfig {
+    fn default() -> Self {
+        Self {
+            cyclomatic_warn: 10,
+            cyclomatic_error: 20,
+            nesting_warn: 4,
+            nesting_error: 6,
         }
     }
 }

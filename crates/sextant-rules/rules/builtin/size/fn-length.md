@@ -5,7 +5,7 @@ description: "Functions whose body spans more than the configured number of line
 severity: warn
 category: size
 scope: file
-languages: [rust]
+languages: [rust, python]
 evaluator:
   type: builtin
   name: fn_length
