@@ -52,30 +52,43 @@ fn make_pr_repo() -> tempfile::TempDir {
     dir
 }
 
-#[test]
-fn pr_mode_emits_markdown_review_with_marker() {
-    let dir = make_pr_repo();
-    let root = dir.path();
-    let out = root.join("review.md");
-
+/// Run `sextant grade --pr` against the repo at `root` and return the
+/// path to the rendered output. Extra args (e.g. `--report-json`) get
+/// appended verbatim. Centralising the boilerplate here keeps the
+/// test bodies focused on the actual assertions.
+fn run_pr_grade(
+    root: &Path,
+    format: &str,
+    output_name: &str,
+    extra: &[&str],
+) -> std::path::PathBuf {
+    let out = root.join(output_name);
+    let mut args: Vec<String> = vec![
+        "grade".into(),
+        "--pr".into(),
+        "--base".into(),
+        "HEAD~1".into(),
+        "--format".into(),
+        format.into(),
+        "--output".into(),
+        out.to_str().unwrap().into(),
+        "--fail-on".into(),
+        "never".into(),
+    ];
+    args.extend(extra.iter().map(|s| s.to_string()));
     Command::cargo_bin("sextant")
         .unwrap()
-        .args([
-            "grade",
-            "--pr",
-            "--base",
-            "HEAD~1",
-            "--format",
-            "markdown",
-            "--output",
-            out.to_str().unwrap(),
-            "--fail-on",
-            "never",
-        ])
+        .args(&args)
         .current_dir(root)
         .assert()
         .success();
+    out
+}
 
+#[test]
+fn pr_mode_emits_markdown_review_with_marker() {
+    let dir = make_pr_repo();
+    let out = run_pr_grade(dir.path(), "markdown", "review.md", &[]);
     let body = std::fs::read_to_string(&out).unwrap();
     assert!(body.contains("# Sextant review"), "got:\n{body}");
     assert!(body.contains("<!-- sextant:review -->"), "got:\n{body}");
@@ -86,30 +99,13 @@ fn pr_mode_emits_markdown_review_with_marker() {
 #[test]
 fn pr_mode_report_json_writes_pr_report_shape() {
     let dir = make_pr_repo();
-    let root = dir.path();
-    let review = root.join("review.md");
-    let report = root.join("report.json");
-
-    Command::cargo_bin("sextant")
-        .unwrap()
-        .args([
-            "grade",
-            "--pr",
-            "--base",
-            "HEAD~1",
-            "--format",
-            "markdown",
-            "--output",
-            review.to_str().unwrap(),
-            "--report-json",
-            report.to_str().unwrap(),
-            "--fail-on",
-            "never",
-        ])
-        .current_dir(root)
-        .assert()
-        .success();
-
+    let report = dir.path().join("report.json");
+    run_pr_grade(
+        dir.path(),
+        "markdown",
+        "review.md",
+        &["--report-json", report.to_str().unwrap()],
+    );
     let body = std::fs::read_to_string(&report).unwrap();
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(v.get("delta").is_some(), "got: {body}");
@@ -117,6 +113,28 @@ fn pr_mode_report_json_writes_pr_report_shape() {
     assert!(
         v["delta"]["new_counts"].get("error").is_some(),
         "got: {body}"
+    );
+}
+
+#[test]
+fn pr_mode_review_json_emits_github_review_payload() {
+    let dir = make_pr_repo();
+    let out = run_pr_grade(dir.path(), "review-json", "review.json", &[]);
+    let body = std::fs::read_to_string(&out).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(
+        v["event"] == "COMMENT" || v["event"] == "REQUEST_CHANGES",
+        "got event: {}",
+        v["event"]
+    );
+    assert!(v["comments"].is_array(), "got: {body}");
+    assert!(
+        v["body"]
+            .as_str()
+            .unwrap()
+            .contains("<!-- sextant:review -->"),
+        "got body:\n{}",
+        v["body"]
     );
 }
 

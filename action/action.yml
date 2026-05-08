@@ -44,6 +44,15 @@ inputs:
     description: Post (or update) a PR review comment with the markdown review.
     required: false
     default: "true"
+  inline-comments:
+    description: |
+      Post Sextant findings as inline PR review comments anchored on
+      changed lines (instead of, or in addition to, the rolled-up
+      `comment` review). When both `comment` and `inline-comments` are
+      true, the inline review goes up *instead of* the issue comment —
+      one reviewer-style review per run, no duplication.
+    required: false
+    default: "false"
   upload-sarif:
     description: |
       If `true`, also runs Sextant in SARIF mode and uploads the result
@@ -161,8 +170,35 @@ runs:
           *)     echo "::error::unknown fail-on: $FAIL_ON" >&2; exit 2 ;;
         esac
 
-    - name: Post review comment
-      if: ${{ inputs.comment == 'true' && github.event.pull_request.number }}
+    - name: Render inline-comments review
+      if: ${{ inputs.inline-comments == 'true' && github.event.pull_request.number }}
+      shell: bash
+      env:
+        BASE_REF: ${{ steps.resolve.outputs.base }}
+        HEAD_REF: ${{ inputs.head }}
+        NO_LLM: ${{ inputs.no-llm }}
+      run: |
+        set -euo pipefail
+        flags=(grade --pr --base "$BASE_REF"
+               --baseline-cache .sextant/cache/baseline
+               --format review-json
+               --output sextant-review.json
+               --fail-on never)
+        if [ -n "$HEAD_REF" ]; then flags+=(--head "$HEAD_REF"); fi
+        if [ "$NO_LLM" = "true" ]; then flags+=(--no-llm); fi
+        sextant "${flags[@]}"
+
+    - name: Post inline review
+      if: ${{ inputs.inline-comments == 'true' && github.event.pull_request.number }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+      run: $GITHUB_ACTION_PATH/scripts/post-review-inline.sh sextant-review.json
+
+    - name: Post issue-comment review
+      if: ${{ inputs.comment == 'true' && inputs.inline-comments != 'true' && github.event.pull_request.number }}
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}

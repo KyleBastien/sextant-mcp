@@ -16,6 +16,9 @@ pub enum Format {
     Json,
     Markdown,
     Sarif,
+    /// GitHub PR Review API payload. Only meaningful in `--pr` mode;
+    /// outside PR mode it falls back to `json`.
+    ReviewJson,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -115,11 +118,10 @@ fn render_normal(report: &Report, format: Format) -> Result<String> {
         Format::Human => format::human(report),
         Format::Json => format::json(report)?,
         Format::Sarif => format::sarif(report)?,
-        Format::Markdown => {
-            // No baseline available without --pr; fall back to the JSON
-            // form so callers don't get a silent "format not applicable".
-            format::json(report)?
-        }
+        // `Markdown` and `ReviewJson` need a baseline. Outside `--pr`
+        // mode there isn't one — fall back to the JSON form rather
+        // than silently emitting nothing useful.
+        Format::Markdown | Format::ReviewJson => format::json(report)?,
     })
 }
 
@@ -129,6 +131,7 @@ fn render_pr(pr: &PrReport, format: Format) -> Result<String> {
         Format::Json => format::json_pr(pr)?,
         Format::Markdown => format::markdown_pr(pr),
         Format::Sarif => format::sarif(&pr.head)?,
+        Format::ReviewJson => format::review_json_pr(pr)?,
     })
 }
 

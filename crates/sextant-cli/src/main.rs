@@ -76,10 +76,15 @@ enum Cmd {
         #[command(subcommand)]
         cmd: RulesCmd,
     },
-    /// Write a `.sextant/` directory with a default config and one
-    /// sample rule. Idempotent: skips files that already exist unless
-    /// `--force` is passed.
+    /// Write a `.sextant/` directory with a config and sample rules.
+    /// Idempotent: skips files that already exist unless `--force` is
+    /// passed.
     Init {
+        /// Which scaffold to drop. `default` is language-agnostic;
+        /// language-specific templates add a relevant sample rule;
+        /// `strict` uses tighter thresholds.
+        #[arg(long, value_enum, default_value_t = commands::init::Template::Default)]
+        template: commands::init::Template,
         /// Overwrite existing files instead of skipping them.
         #[arg(long)]
         force: bool,
@@ -155,6 +160,6 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             RulesCmd::Explain { id } => commands::rules::explain(&id),
             RulesCmd::Check { path } => commands::rules::check(&path),
         },
-        Cmd::Init { force } => commands::init::run(force),
+        Cmd::Init { template, force } => commands::init::run(template, force),
     }
 }

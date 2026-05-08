@@ -1,19 +1,47 @@
 //! Sextant MCP server.
 //!
-//! Reads newline-delimited JSON-RPC 2.0 requests from stdin, writes responses
-//! to stdout. **stdout is reserved for protocol traffic only** — all logging
-//! goes to stderr. Closing stdin causes the server to exit cleanly.
+//! Two transports:
+//!   * stdio (default) — newline-delimited JSON-RPC 2.0. **stdout is
+//!     reserved for protocol traffic only**; logging goes to stderr.
+//!     Closing stdin causes a clean exit.
+//!   * HTTP (`--http <addr>`) — single POST endpoint at `/` that takes
+//!     a JSON-RPC body and returns a JSON-RPC response. Notifications
+//!     reply 202 Accepted. No streaming variants — strict req/resp.
+//!
+//! Both transports funnel through `handler::handle_line`, so behavior
+//! is identical regardless of how the request arrived.
 
+mod handler;
+mod http;
 mod protocol;
 mod tools;
 
 use std::io::{BufRead, BufReader, Write};
+use std::net::SocketAddr;
 
-use serde_json::{json, Value};
+use clap::Parser;
 
-use crate::protocol::{codes, error, success, Request, PROTOCOL_VERSION};
+use crate::handler::handle_line;
+
+#[derive(Debug, Parser)]
+#[command(name = "sextant-mcp", version, about = "Sextant MCP server")]
+struct Cli {
+    /// Bind an HTTP server on the given address (e.g. `127.0.0.1:7331`)
+    /// instead of running on stdio.
+    #[arg(long, value_name = "ADDR")]
+    http: Option<SocketAddr>,
+}
 
 fn main() -> std::io::Result<()> {
+    init_tracing();
+    let cli = Cli::parse();
+    match cli.http {
+        Some(addr) => run_http(addr),
+        None => run_stdio(),
+    }
+}
+
+fn init_tracing() {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
@@ -21,11 +49,12 @@ fn main() -> std::io::Result<()> {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
         )
         .init();
+}
 
+fn run_stdio() -> std::io::Result<()> {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout().lock();
     let reader = BufReader::new(stdin.lock());
-
     for line in reader.lines() {
         let line = match line {
             Ok(l) if !l.trim().is_empty() => l,
@@ -43,65 +72,9 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Process one JSON-RPC line. Returns `None` for notifications (which never
-/// produce a response) and for malformed lines we can't even attribute an id
-/// to.
-fn handle_line(line: &str) -> Option<String> {
-    let req: Request = match serde_json::from_str(line) {
-        Ok(r) => r,
-        Err(err) => {
-            tracing::warn!(?err, "ignoring malformed request");
-            return None;
-        }
-    };
-    let id = req.id.clone().unwrap_or(Value::Null);
-
-    let outcome = dispatch(&req);
-
-    if req.is_notification() {
-        // Notifications never produce a response — even if they returned an
-        // error from our handlers, we drop it.
-        return None;
-    }
-
-    Some(match outcome {
-        Ok(result) => success(id, result),
-        Err((code, message)) => error(id, code, message),
-    })
-}
-
-fn dispatch(req: &Request) -> Result<Value, (i32, String)> {
-    match req.method.as_str() {
-        "initialize" => Ok(initialize_result()),
-        "notifications/initialized" => Ok(Value::Null),
-        "tools/list" => Ok(json!({ "tools": tools::descriptors() })),
-        "tools/call" => {
-            let name = req
-                .params
-                .get("name")
-                .and_then(|v| v.as_str())
-                .ok_or((codes::INVALID_PARAMS, "missing `name`".into()))?
-                .to_string();
-            let args = req.params.get("arguments").cloned().unwrap_or(Value::Null);
-            tools::dispatch(&name, args)
-        }
-        "ping" => Ok(json!({})),
-        other => Err((
-            codes::METHOD_NOT_FOUND,
-            format!("method not found: {other}"),
-        )),
-    }
-}
-
-fn initialize_result() -> Value {
-    json!({
-        "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": {
-            "tools": { "listChanged": false }
-        },
-        "serverInfo": {
-            "name": "sextant-mcp",
-            "version": env!("CARGO_PKG_VERSION"),
-        }
-    })
+fn run_http(addr: SocketAddr) -> std::io::Result<()> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(http::serve(addr))
 }
