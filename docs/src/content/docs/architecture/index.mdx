@@ -1,0 +1,111 @@
+---
+title: Architecture
+description: Crate dependency diagram and high-level layout.
+sidebar:
+  label: Overview
+  order: 1
+---
+
+import Mermaid from '../../../components/Mermaid.astro';
+
+Sextant is a Rust Cargo workspace with nine crates. The dependency
+graph is a tree: a thin core type crate at the bottom, single-purpose
+crates that depend on it for their domain (rules, diff acquisition,
+language parsing, LLM judges, config), an engine that orchestrates
+them, and two binaries — CLI and MCP server — that share the engine.
+
+## Crate dependency graph
+
+<Mermaid code={`graph TD
+  cli[sextant-cli] --> engine
+  mcp[sextant-mcp] --> engine
+  engine[sextant-engine] --> rules
+  engine --> diff[sextant-diff]
+  engine --> lang[sextant-lang]
+  engine --> judge[sextant-judge]
+  engine --> config[sextant-config]
+  rules[sextant-rules] --> core
+  diff --> core
+  lang --> core
+  judge --> core
+  config --> core
+  core[sextant-core]
+`} />
+
+The shape is deliberately flat. There's exactly one engine; the two
+binaries are thin shells around it. New surfaces (a language server,
+say, or a webhook) plug in at the binary level without touching the
+shared crates.
+
+## What each crate does
+
+- **`sextant-core`** — Type definitions (`Rule`, `Finding`, `Report`,
+  `Verdict`, `Evaluator` trait). No I/O. Every other crate depends on
+  it.
+- **`sextant-config`** — Reads `.sextant/config.toml` into typed
+  structs and merges with defaults.
+- **`sextant-rules`** — Built-in rule evaluators (the seven shipped
+  rules) plus rule discovery for `.sextant/rules/**/*.md`.
+- **`sextant-diff`** — Git diff acquisition via `git2`. Resolves base
+  refs, walks blob contents, returns changed line ranges.
+- **`sextant-lang`** — Tree-sitter parsers and queries for Rust,
+  Python, Go, Java, TypeScript / TSX / JavaScript. Used by built-in
+  evaluators that need ASTs.
+- **`sextant-judge`** — LLM-as-judge providers (Anthropic, OpenAI),
+  cache (BLAKE3), tool-use schema enforcement.
+- **`sextant-engine`** — Grading orchestration. Loads config and
+  rules, picks files via diff or paths, runs evaluators, builds the
+  `Report`. Exposed by both binaries.
+- **`sextant-cli`** — The `sextant` binary. Wraps the engine in a
+  clap CLI.
+- **`sextant-mcp`** — The `sextant-mcp` binary. JSON-RPC 2.0 server
+  (stdio + HTTP) wrapping the engine.
+
+See [Per-crate summary](/sextant-mcp/architecture/crates/) for one
+paragraph each.
+
+## Why nine crates
+
+Splitting along dependency boundaries pays off in three places:
+
+1. **Compile time.** Touching the LLM provider doesn't recompile the
+   tree-sitter grammars; touching a parser doesn't recompile the MCP
+   protocol layer.
+2. **Surface evolution.** The MCP binary and the GitHub Action share
+   no transitive deps beyond `sextant-engine` — their wire formats
+   can evolve independently.
+3. **Test isolation.** Each crate has its own integration tests
+   focused on its concern. `cargo test -p sextant-rules` runs in a
+   second.
+
+## Data flow
+
+A grade follows the same path on every surface:
+
+1. **Surface** (CLI / MCP / Action) parses arguments and calls
+   `sextant_engine::grade(cwd, GradeMode)`.
+2. **Engine** loads config (`sextant-config`) and rules
+   (`sextant-rules`).
+3. **Engine** acquires the file set — diff (`sextant-diff`) or
+   directory walk for whole-file mode.
+4. **Engine** parses files with `sextant-lang` if any rule needs an
+   AST.
+5. **Engine** runs each evaluator against each in-scope file. LLM
+   evaluators go through `sextant-judge`.
+6. **Engine** assembles a `Report` (sorted, summary line computed,
+   verdict from `[verdict]` thresholds).
+7. **Surface** renders the `Report` (`sextant-cli/src/commands/format/`
+   for CLI; JSON-string-in-MCP-envelope for the server).
+
+See [Data model](/sextant-mcp/architecture/data-model/) for the
+specific types each step exchanges.
+
+## See also
+
+- [Per-crate summary](/sextant-mcp/architecture/crates/) — one
+  paragraph per crate.
+- [Data model](/sextant-mcp/architecture/data-model/) — Rule →
+  Finding → Report → Verdict.
+- The
+  [`crates/`](https://github.com/kylebastien/sextant-mcp/tree/main/crates)
+  directory in the repo.

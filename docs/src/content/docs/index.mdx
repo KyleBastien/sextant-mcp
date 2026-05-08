@@ -1,0 +1,95 @@
+---
+title: Sextant
+description: Code-quality grader for AI-agent workflows. Deterministic rules and LLM judges, surfaced inside the agent loop and on every PR.
+template: splash
+hero:
+  tagline: Deterministic rules and LLM judges, surfaced inside the agent loop and on every PR.
+  image:
+    file: ../../assets/hero.svg
+  actions:
+    - text: Get started
+      link: /sextant-mcp/getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/kylebastien/sextant-mcp
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## One engine, four surfaces
+
+Sextant is a code grader built for the way AI agents actually write code:
+short edits, fast feedback loops, opinionated cleanup. The same engine that
+runs in your editor runs on every pull request — so the rules you tune in
+one place hold everywhere.
+
+<CardGrid>
+	<Card title="MCP server" icon="puzzle">
+		Agents call `grade_diff` after each edit and self-correct before
+		finishing the turn. Stdio or HTTP transport.
+		[Read the MCP guide →](/sextant-mcp/mcp/)
+	</Card>
+	<Card title="GitHub Action" icon="github">
+		Posts a single review comment on every PR. Gates merge on
+		regression — pre-existing findings don't block new work.
+		[Wire up CI →](/sextant-mcp/action/)
+	</Card>
+	<Card title="Claude Code plugin" icon="rocket">
+		Skills, slash commands, and hooks that wire grading into the
+		Claude Code edit loop with zero extra configuration.
+		[Install the plugin →](/sextant-mcp/plugin/)
+	</Card>
+	<Card title="CLI" icon="seti:powershell">
+		`sextant grade` for human, JSON, markdown, or SARIF output. Works
+		offline once installed.
+		[Browse the CLI reference →](/sextant-mcp/cli/)
+	</Card>
+</CardGrid>
+
+## Why Sextant
+
+<CardGrid>
+	<Card title="Built for the inner loop" icon="laptop">
+		Diff-mode grading runs in well under a second on a typical change,
+		so an agent can grade after every edit without slowing the user
+		down.
+	</Card>
+	<Card title="Deterministic by default" icon="approve-check">
+		Built-in rules are pure Rust — file length, function length,
+		cyclomatic complexity, nesting, parameter count, token
+		duplication, untested public functions. No network calls.
+	</Card>
+	<Card title="LLM rules when you want them" icon="random">
+		Author markdown rules that are evaluated by Claude or GPT against
+		individual files. Cached by content hash so repeat grades are
+		free.
+	</Card>
+	<Card title="Regression-aware" icon="rocket">
+		PR mode only blocks on findings introduced by the change. The
+		repo's existing debt is its problem; the PR's job is to not make
+		it worse.
+	</Card>
+</CardGrid>
+
+## Quickstart
+
+```sh
+# Install (brew tap pending)
+cargo install --path crates/sextant-cli
+cargo install --path crates/sextant-mcp
+
+# Bootstrap a config in your repo
+cd your-repo && sextant init
+
+# Grade the working tree
+sextant grade
+
+# Grade only what changed since main
+sextant grade --diff --base origin/main
+```
+
+Then [wire it into Claude Code](/sextant-mcp/plugin/) or
+[your CI](/sextant-mcp/action/).

@@ -1,0 +1,19 @@
+---
+const { code } = Astro.props;
+---
+
+<div class="mermaid" set:html={code}></div>
+
+<script>
+	import mermaid from 'mermaid';
+
+	const isDark = document.documentElement.dataset.theme === 'dark';
+	mermaid.initialize({
+		startOnLoad: true,
+		theme: isDark ? 'dark' : 'default',
+		securityLevel: 'loose',
+		fontFamily: 'inherit',
+	});
+
+	mermaid.run({ querySelector: '.mermaid' });
+</script>
