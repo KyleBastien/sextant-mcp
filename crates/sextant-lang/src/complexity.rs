@@ -39,26 +39,32 @@ pub fn function_complexity(parsed: &ParsedFile) -> Result<Vec<FunctionComplexity
 }
 
 fn find_def_at_line(tree: &Tree, line: u32, language: Language) -> Option<Node<'_>> {
-    let target_kind = match language {
-        Language::Rust => "function_item",
-        Language::Python => "function_definition",
+    // Some languages have more than one node kind for "a function" — Go
+    // distinguishes free functions from methods on receivers, Java
+    // distinguishes methods from constructors. The walker accepts any
+    // of the kinds in the slice.
+    let target_kinds: &[&str] = match language {
+        Language::Rust => &["function_item"],
+        Language::Python => &["function_definition"],
+        Language::Go => &["function_declaration", "method_declaration"],
+        Language::Java => &["method_declaration", "constructor_declaration"],
     };
     let mut cursor = tree.walk();
-    find_def_recursive(&mut cursor, target_kind, line)
+    find_def_recursive(&mut cursor, target_kinds, line)
 }
 
 fn find_def_recursive<'tree>(
     cursor: &mut TreeCursor<'tree>,
-    target_kind: &str,
+    target_kinds: &[&str],
     line: u32,
 ) -> Option<Node<'tree>> {
     let node = cursor.node();
-    if node.kind() == target_kind && (node.start_position().row as u32) + 1 == line {
+    if target_kinds.contains(&node.kind()) && (node.start_position().row as u32) + 1 == line {
         return Some(node);
     }
     if cursor.goto_first_child() {
         loop {
-            if let Some(found) = find_def_recursive(cursor, target_kind, line) {
+            if let Some(found) = find_def_recursive(cursor, target_kinds, line) {
                 return Some(found);
             }
             if !cursor.goto_next_sibling() {
@@ -150,6 +156,26 @@ fn is_branch(node: &Node<'_>, language: Language) -> bool {
                 | "except_clause"
                 | "conditional_expression"
         ),
+        Language::Go => matches!(
+            node.kind(),
+            "if_statement"
+                | "for_statement"
+                | "expression_case"
+                | "type_case"
+                | "communication_case"
+                | "select_statement"
+        ),
+        Language::Java => matches!(
+            node.kind(),
+            "if_statement"
+                | "while_statement"
+                | "for_statement"
+                | "enhanced_for_statement"
+                | "do_statement"
+                | "switch_label"
+                | "catch_clause"
+                | "ternary_expression"
+        ),
     }
 }
 
@@ -167,6 +193,25 @@ fn is_nesting_increment(node: &Node<'_>, language: Language) -> bool {
         Language::Python => matches!(
             node.kind(),
             "if_statement" | "while_statement" | "for_statement" | "try_statement"
+        ),
+        Language::Go => matches!(
+            node.kind(),
+            "if_statement"
+                | "for_statement"
+                | "expression_switch_statement"
+                | "type_switch_statement"
+                | "select_statement"
+        ),
+        Language::Java => matches!(
+            node.kind(),
+            "if_statement"
+                | "while_statement"
+                | "for_statement"
+                | "enhanced_for_statement"
+                | "do_statement"
+                | "switch_expression"
+                | "switch_statement"
+                | "try_statement"
         ),
     }
 }
@@ -212,6 +257,51 @@ fn f(x: i32) -> i32 {
 }
 "#;
         assert_branchy(&complexities(src, Language::Rust));
+    }
+
+    #[test]
+    fn go_branching_increments_cyclomatic_and_nesting() {
+        let src = r#"
+package main
+
+func f(x int) int {
+    if x > 0 {
+        for i := 0; i < 5; i++ {
+            switch x {
+            case 1:
+                return 1
+            case 2:
+                return 2
+            }
+        }
+    }
+    return 0
+}
+"#;
+        assert_branchy(&complexities(src, Language::Go));
+    }
+
+    #[test]
+    fn java_branching_increments_cyclomatic_and_nesting() {
+        let src = r#"
+class C {
+    int f(int x) {
+        if (x > 0) {
+            for (int i = 0; i < 5; i++) {
+                if (i == x) {
+                    try {
+                        return 1;
+                    } catch (Exception e) {
+                        return 0;
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+}
+"#;
+        assert_branchy(&complexities(src, Language::Java));
     }
 
     #[test]

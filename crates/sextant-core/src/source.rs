@@ -1,5 +1,20 @@
 use std::path::{Path, PathBuf};
 
+/// File-extension → tree-sitter language name. Order doesn't matter; the
+/// table is searched linearly and entries are mutually exclusive.
+const EXTENSION_TO_LANGUAGE: &[(&str, &str)] = &[
+    ("rs", "rust"),
+    ("py", "python"),
+    ("go", "go"),
+    ("java", "java"),
+    ("ts", "typescript"),
+    ("tsx", "typescript"),
+    ("js", "javascript"),
+    ("mjs", "javascript"),
+    ("cjs", "javascript"),
+    ("jsx", "javascript"),
+];
+
 #[derive(Debug, Clone)]
 pub struct SourceFile {
     pub path: PathBuf,
@@ -32,15 +47,11 @@ impl SourceFile {
     }
 
     pub fn language_hint(&self) -> Option<&'static str> {
-        match self.extension()? {
-            "rs" => Some("rust"),
-            "ts" => Some("typescript"),
-            "tsx" => Some("typescript"),
-            "js" | "mjs" | "cjs" => Some("javascript"),
-            "jsx" => Some("javascript"),
-            "py" => Some("python"),
-            _ => None,
-        }
+        let ext = self.extension()?;
+        EXTENSION_TO_LANGUAGE
+            .iter()
+            .find(|(e, _)| *e == ext)
+            .map(|(_, lang)| *lang)
     }
 
     pub fn relative_to(&self, root: &Path) -> PathBuf {
