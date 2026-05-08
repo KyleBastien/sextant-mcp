@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "sextant": {
-      "command": "sextant-mcp",
-      "args": []
-    }
-  }
-}
