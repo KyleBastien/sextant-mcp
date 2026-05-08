@@ -18,7 +18,7 @@ automatically — no `.sextant/rules/` entries required.
 | [`builtin.complexity.cyclomatic`](/sextant-mcp/rules/builtin/complexity-cyclomatic/) | warn | rust, python, go, java, ts/tsx/js | Too many independent control-flow paths. |
 | [`builtin.complexity.nesting`](/sextant-mcp/rules/builtin/complexity-nesting/) | warn | rust, python, go, java, ts/tsx/js | Deeply nested control structures. |
 | [`builtin.duplication.tokens`](/sextant-mcp/rules/builtin/duplication-tokens/) | warn | rust, python, go, java, ts/tsx/js | Repeated structurally-identical code. |
-| [`builtin.tests.pub-fn-untested`](/sextant-mcp/rules/builtin/tests-pub-fn-untested/) | info | rust | Public function never mentioned in a test in the same file. |
+| [`builtin.tests.pub-fn-untested`](/sextant-mcp/rules/builtin/tests-pub-fn-untested/) | info | rust, ts/tsx/js | Public function or exported declaration never mentioned in a test in the same file. |
 
 All seven are `file`-scope, so they fire in both diff and whole-file
 mode (with diff-mode filtering findings to changed lines). Tune their
