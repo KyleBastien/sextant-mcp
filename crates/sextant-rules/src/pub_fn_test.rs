@@ -1,13 +1,16 @@
-//! Flag `pub fn` definitions whose name doesn't appear in any
-//! `#[test]`-annotated function body in the same file.
+//! Flag public-API definitions whose name doesn't appear in any in-file
+//! test body. For Rust this is `pub fn` vs `#[test]` bodies; for
+//! JavaScript/TypeScript it's `export`-ed declarations vs `describe` /
+//! `it` / `test` callback bodies.
 //!
 //! Severity is `info` — this is a signal that helps the agent decide
 //! where to focus, not a verdict-breaker. Cross-file detection (tests in
-//! `tests/` or a separate integration crate) is intentionally out of
-//! scope until the engine grows a repo-scope evaluator API.
+//! `tests/`, a separate integration crate, or a sibling `*.test.ts`
+//! file) is intentionally out of scope until the engine grows a
+//! repo-scope evaluator API.
 
 use sextant_core::{EvalContext, Evaluator, Finding, Rule, SourceFile};
-use sextant_lang::{parse, rust_test_witness, test_haystack_mentions, Language};
+use sextant_lang::{parse, test_haystack_mentions, test_witness, Language};
 
 use crate::file_length::rule_from_parsed;
 use crate::loader::ParsedRule;
@@ -30,14 +33,23 @@ impl Evaluator for PubFnUntestedRule {
     }
 
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
-        if file.language_hint() != Some("rust") {
+        let Some(hint) = file.language_hint() else {
+            return Vec::new();
+        };
+        let Some(lang) = Language::from_hint(hint) else {
+            return Vec::new();
+        };
+        if !matches!(
+            lang,
+            Language::Rust | Language::JavaScript | Language::TypeScript | Language::Tsx
+        ) {
             return Vec::new();
         }
-        let parsed = match parse(file.contents.clone(), Language::Rust) {
+        let parsed = match parse(file.contents.clone(), lang) {
             Ok(p) => p,
             Err(_) => return Vec::new(),
         };
-        let witness = rust_test_witness(&parsed);
+        let witness = test_witness(&parsed);
         if witness.pub_fns.is_empty() {
             return Vec::new();
         }
@@ -47,17 +59,27 @@ impl Evaluator for PubFnUntestedRule {
             if test_haystack_mentions(&witness.test_haystack, &pf.name) {
                 continue;
             }
-            let msg = format!(
-                "Public function `{}` is not referenced by any `#[test]` in this file. \
-                 Add a unit test or reduce visibility to `pub(crate)`.",
-                pf.name
-            );
+            let msg = message_for(lang, &pf.name);
             out.push(
                 Finding::new(&self.rule.id, self.rule.severity, path.clone(), msg)
                     .spanning(pf.start_line, pf.end_line),
             );
         }
         out
+    }
+}
+
+fn message_for(lang: Language, name: &str) -> String {
+    match lang {
+        Language::Rust => format!(
+            "Public function `{name}` is not referenced by any `#[test]` in this file. \
+             Add a unit test or reduce visibility to `pub(crate)`."
+        ),
+        Language::JavaScript | Language::TypeScript | Language::Tsx => format!(
+            "Exported `{name}` is not referenced by any `describe`/`it`/`test` block \
+             in this file. Add an in-file test or drop the `export`."
+        ),
+        _ => format!("Public `{name}` is not referenced by any test in this file."),
     }
 }
 
@@ -76,7 +98,7 @@ description: "x"
 severity: info
 category: tests
 scope: file
-languages: [rust]
+languages: [rust, javascript, typescript, tsx]
 evaluator: { type: builtin, name: pub_fn_untested }
 ---
 "#,
@@ -117,8 +139,9 @@ mod tests {
     }
 
     #[test]
-    fn ignores_non_rust_files() {
+    fn ignores_unsupported_languages() {
         assert!(evaluate("a.py", "def f(): pass\n").is_empty());
+        assert!(evaluate("a.go", "package x\nfunc F() {}\n").is_empty());
     }
 
     #[test]
@@ -159,5 +182,53 @@ mod tests {
             .filter_map(|x| x.message.split('`').nth(1))
             .collect();
         assert_eq!(names, vec!["one", "three"]);
+    }
+
+    #[test]
+    fn js_flags_exported_fn_with_no_test() {
+        let f = evaluate("a.js", "export function lonely() {}\n");
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert_eq!(f[0].severity, Severity::Info);
+        assert!(f[0].message.contains("lonely"));
+        assert!(f[0].message.contains("describe"));
+    }
+
+    #[test]
+    fn js_quiet_when_describe_mentions_fn() {
+        let src = "export function add(a, b) { return a + b; }\n\
+                   describe('add', () => {\n\
+                     it('sums', () => { expect(add(1, 2)).toBe(3); });\n\
+                   });\n";
+        assert!(evaluate("a.js", src).is_empty());
+    }
+
+    #[test]
+    fn js_ignores_non_exported_top_level_fn() {
+        assert!(evaluate("a.js", "function privateFn() {}\n").is_empty());
+    }
+
+    #[test]
+    fn ts_flags_exported_arrow_with_no_test() {
+        let f = evaluate(
+            "a.ts",
+            "export const square = (x: number): number => x * x;\n",
+        );
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert!(f[0].message.contains("square"));
+    }
+
+    #[test]
+    fn ts_quiet_when_test_mentions_fn() {
+        let src = "export const square = (x: number): number => x * x;\n\
+                   test('square', () => { expect(square(3)).toBe(9); });\n";
+        assert!(evaluate("a.ts", src).is_empty());
+    }
+
+    #[test]
+    fn tsx_flags_untested_exported_component() {
+        let src = "export const Hello = ({ name }: { name: string }) => <div>Hi {name}</div>;\n";
+        let f = evaluate("a.tsx", src);
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert!(f[0].message.contains("Hello"));
     }
 }
