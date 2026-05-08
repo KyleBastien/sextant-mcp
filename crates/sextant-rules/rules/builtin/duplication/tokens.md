@@ -5,7 +5,7 @@ description: "Repeated runs of structurally-identical code within a file."
 severity: warn
 category: duplication
 scope: file
-languages: [rust, python]
+languages: [rust, python, go, java, typescript, tsx, javascript]
 evaluator:
   type: builtin
   name: tokens_dup

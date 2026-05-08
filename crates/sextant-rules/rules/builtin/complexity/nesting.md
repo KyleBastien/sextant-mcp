@@ -5,7 +5,7 @@ description: "Functions with too many nested control structures."
 severity: warn
 category: complexity
 scope: file
-languages: [rust, python]
+languages: [rust, python, go, java, typescript, tsx, javascript]
 evaluator:
   type: builtin
   name: nesting

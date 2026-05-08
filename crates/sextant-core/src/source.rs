@@ -8,10 +8,12 @@ const EXTENSION_TO_LANGUAGE: &[(&str, &str)] = &[
     ("go", "go"),
     ("java", "java"),
     ("ts", "typescript"),
-    ("tsx", "typescript"),
+    // `.tsx` needs the TSX grammar; the plain TS grammar can't parse JSX.
+    ("tsx", "tsx"),
     ("js", "javascript"),
     ("mjs", "javascript"),
     ("cjs", "javascript"),
+    // tree-sitter-javascript handles both .js and .jsx in one grammar.
     ("jsx", "javascript"),
 ];
 
@@ -78,9 +80,15 @@ mod tests {
     #[test]
     fn language_hint_from_extension() {
         assert_eq!(SourceFile::new("a.rs", "").language_hint(), Some("rust"));
+        assert_eq!(SourceFile::new("a.go", "").language_hint(), Some("go"));
         assert_eq!(
-            SourceFile::new("a.tsx", "").language_hint(),
+            SourceFile::new("a.ts", "").language_hint(),
             Some("typescript")
+        );
+        assert_eq!(SourceFile::new("a.tsx", "").language_hint(), Some("tsx"));
+        assert_eq!(
+            SourceFile::new("a.jsx", "").language_hint(),
+            Some("javascript")
         );
         assert_eq!(SourceFile::new("a.unknown", "").language_hint(), None);
     }

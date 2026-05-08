@@ -10,6 +10,11 @@ pub enum Language {
     Python,
     Go,
     Java,
+    /// Pure TypeScript (`.ts`). For TSX (`.tsx`) use [`Language::Tsx`] —
+    /// the TypeScript grammar without JSX support won't parse `.tsx`.
+    TypeScript,
+    Tsx,
+    JavaScript,
 }
 
 impl Language {
@@ -19,6 +24,9 @@ impl Language {
             "python" => Some(Language::Python),
             "go" => Some(Language::Go),
             "java" => Some(Language::Java),
+            "typescript" => Some(Language::TypeScript),
+            "tsx" => Some(Language::Tsx),
+            "javascript" => Some(Language::JavaScript),
             _ => None,
         }
     }
@@ -29,6 +37,9 @@ impl Language {
             Language::Python => tree_sitter_python::language(),
             Language::Go => tree_sitter_go::language(),
             Language::Java => tree_sitter_java::language(),
+            Language::TypeScript => tree_sitter_typescript::language_typescript(),
+            Language::Tsx => tree_sitter_typescript::language_tsx(),
+            Language::JavaScript => tree_sitter_javascript::language(),
         }
     }
 }
@@ -69,6 +80,17 @@ mod tests {
     fn from_hint_recognizes_supported_languages() {
         assert_eq!(Language::from_hint("rust"), Some(Language::Rust));
         assert_eq!(Language::from_hint("python"), Some(Language::Python));
+        assert_eq!(Language::from_hint("go"), Some(Language::Go));
+        assert_eq!(Language::from_hint("java"), Some(Language::Java));
+        assert_eq!(
+            Language::from_hint("typescript"),
+            Some(Language::TypeScript)
+        );
+        assert_eq!(Language::from_hint("tsx"), Some(Language::Tsx));
+        assert_eq!(
+            Language::from_hint("javascript"),
+            Some(Language::JavaScript)
+        );
         assert_eq!(Language::from_hint("nope"), None);
     }
 

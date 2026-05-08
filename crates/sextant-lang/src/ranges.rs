@@ -50,6 +50,29 @@ const JAVA_FN_QUERY: &str = r#"
   parameters: (formal_parameters) @fn.params) @fn.def
 "#;
 
+// JS/TS/TSX share the same node names for declarations and methods.
+// Arrow functions assigned to `const x = () => {}` show up as
+// `lexical_declaration > variable_declarator (name) (arrow_function)`,
+// which we capture so anonymous closures still count toward complexity
+// and length checks.
+const JS_FN_QUERY: &str = r#"
+(function_declaration
+  name: (identifier) @fn.name
+  parameters: (formal_parameters) @fn.params) @fn.def
+(method_definition
+  name: (property_identifier) @fn.name
+  parameters: (formal_parameters) @fn.params) @fn.def
+(generator_function_declaration
+  name: (identifier) @fn.name
+  parameters: (formal_parameters) @fn.params) @fn.def
+(variable_declarator
+  name: (identifier) @fn.name
+  value: [
+    (arrow_function parameters: (formal_parameters) @fn.params) @fn.def
+    (function_expression parameters: (formal_parameters) @fn.params) @fn.def
+  ])
+"#;
+
 /// Extract function ranges from a parsed file.
 pub fn function_ranges(parsed: &ParsedFile) -> Result<Vec<FunctionRange>, LangError> {
     let query_src = match parsed.language {
@@ -57,6 +80,8 @@ pub fn function_ranges(parsed: &ParsedFile) -> Result<Vec<FunctionRange>, LangEr
         Language::Python => PYTHON_FN_QUERY,
         Language::Go => GO_FN_QUERY,
         Language::Java => JAVA_FN_QUERY,
+        // JS/TS/TSX all use the same grammar shape for functions.
+        Language::JavaScript | Language::TypeScript | Language::Tsx => JS_FN_QUERY,
     };
     extract(parsed, query_src)
 }
@@ -192,6 +217,29 @@ mod tests {
     fn java_basic_pulls_method_and_constructor() {
         let src = "class Foo {\n  public Foo(int x) {}\n  public int bar(int a, int b) { return a + b; }\n}\n";
         assert_names_contain(src, Language::Java, &["Foo", "bar"]);
+    }
+
+    #[test]
+    fn javascript_pulls_declaration_method_and_arrow() {
+        let src = "function add(a, b) { return a + b; }\n\
+                   class C { greet(name) { return name; } }\n\
+                   const square = (x) => x * x;\n";
+        assert_names_contain(src, Language::JavaScript, &["add", "greet", "square"]);
+    }
+
+    #[test]
+    fn typescript_pulls_declaration_method_and_arrow() {
+        let src = "function add(a: number, b: number): number { return a + b; }\n\
+                   class C { greet(name: string): string { return name; } }\n\
+                   const square = (x: number): number => x * x;\n";
+        assert_names_contain(src, Language::TypeScript, &["add", "greet", "square"]);
+    }
+
+    #[test]
+    fn tsx_parses_jsx_syntax() {
+        let src = "const Hello = ({ name }: { name: string }) => <div>Hi {name}</div>;\n\
+                   function App() { return <Hello name=\"world\" />; }\n";
+        assert_names_contain(src, Language::Tsx, &["Hello", "App"]);
     }
 
     #[test]

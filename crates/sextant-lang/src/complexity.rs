@@ -48,6 +48,13 @@ fn find_def_at_line(tree: &Tree, line: u32, language: Language) -> Option<Node<'
         Language::Python => &["function_definition"],
         Language::Go => &["function_declaration", "method_declaration"],
         Language::Java => &["method_declaration", "constructor_declaration"],
+        Language::JavaScript | Language::TypeScript | Language::Tsx => &[
+            "function_declaration",
+            "method_definition",
+            "generator_function_declaration",
+            "arrow_function",
+            "function_expression",
+        ],
     };
     let mut cursor = tree.walk();
     find_def_recursive(&mut cursor, target_kinds, line)
@@ -176,6 +183,20 @@ fn is_branch(node: &Node<'_>, language: Language) -> bool {
                 | "catch_clause"
                 | "ternary_expression"
         ),
+        // Same for JS/TS/TSX — the TypeScript and TSX grammars are
+        // supersets of JS for control flow.
+        Language::JavaScript | Language::TypeScript | Language::Tsx => matches!(
+            node.kind(),
+            "if_statement"
+                | "while_statement"
+                | "do_statement"
+                | "for_statement"
+                | "for_in_statement"
+                | "for_of_statement"
+                | "switch_case"
+                | "catch_clause"
+                | "ternary_expression"
+        ),
     }
 }
 
@@ -210,6 +231,17 @@ fn is_nesting_increment(node: &Node<'_>, language: Language) -> bool {
                 | "enhanced_for_statement"
                 | "do_statement"
                 | "switch_expression"
+                | "switch_statement"
+                | "try_statement"
+        ),
+        Language::JavaScript | Language::TypeScript | Language::Tsx => matches!(
+            node.kind(),
+            "if_statement"
+                | "while_statement"
+                | "do_statement"
+                | "for_statement"
+                | "for_in_statement"
+                | "for_of_statement"
                 | "switch_statement"
                 | "try_statement"
         ),
@@ -302,6 +334,44 @@ class C {
 }
 "#;
         assert_branchy(&complexities(src, Language::Java));
+    }
+
+    #[test]
+    fn javascript_branching_increments_cyclomatic_and_nesting() {
+        let src = r#"
+function f(x) {
+    if (x > 0) {
+        for (let i = 0; i < 5; i++) {
+            switch (i) {
+                case 1: return 1;
+                case 2: return 2;
+                default: break;
+            }
+        }
+    }
+    return 0;
+}
+"#;
+        assert_branchy(&complexities(src, Language::JavaScript));
+    }
+
+    #[test]
+    fn typescript_branching_increments_cyclomatic_and_nesting() {
+        let src = r#"
+function f(x: number): number {
+    if (x > 0) {
+        for (const item of [1, 2, 3]) {
+            try {
+                if (item === x) return 1;
+            } catch (e) {
+                return 0;
+            }
+        }
+    }
+    return 0;
+}
+"#;
+        assert_branchy(&complexities(src, Language::TypeScript));
     }
 
     #[test]
