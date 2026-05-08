@@ -32,11 +32,31 @@ const PYTHON_FN_QUERY: &str = r#"
   parameters: (parameters) @fn.params) @fn.def
 "#;
 
+const GO_FN_QUERY: &str = r#"
+(function_declaration
+  name: (identifier) @fn.name
+  parameters: (parameter_list) @fn.params) @fn.def
+(method_declaration
+  name: (field_identifier) @fn.name
+  parameters: (parameter_list) @fn.params) @fn.def
+"#;
+
+const JAVA_FN_QUERY: &str = r#"
+(method_declaration
+  name: (identifier) @fn.name
+  parameters: (formal_parameters) @fn.params) @fn.def
+(constructor_declaration
+  name: (identifier) @fn.name
+  parameters: (formal_parameters) @fn.params) @fn.def
+"#;
+
 /// Extract function ranges from a parsed file.
 pub fn function_ranges(parsed: &ParsedFile) -> Result<Vec<FunctionRange>, LangError> {
     let query_src = match parsed.language {
         Language::Rust => RUST_FN_QUERY,
         Language::Python => PYTHON_FN_QUERY,
+        Language::Go => GO_FN_QUERY,
+        Language::Java => JAVA_FN_QUERY,
     };
     extract(parsed, query_src)
 }
@@ -149,6 +169,29 @@ mod tests {
         assert_eq!(fns[0].name, "alpha");
         assert_eq!(fns[1].name, "beta");
         assert_eq!(fns[1].param_count, 3);
+    }
+
+    fn assert_names_contain(src: &str, lang: Language, expected: &[&str]) {
+        let names: Vec<String> = ranges(src, lang).into_iter().map(|f| f.name).collect();
+        for want in expected {
+            assert!(
+                names.iter().any(|n| n == want),
+                "{lang:?}: expected {want} in {names:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn go_basic_pulls_function_and_method() {
+        let src = "package main\n\nfunc Add(a, b int) int { return a + b }\n\
+                   type S struct{}\nfunc (s *S) Hello(name string) {}\n";
+        assert_names_contain(src, Language::Go, &["Add", "Hello"]);
+    }
+
+    #[test]
+    fn java_basic_pulls_method_and_constructor() {
+        let src = "class Foo {\n  public Foo(int x) {}\n  public int bar(int a, int b) { return a + b; }\n}\n";
+        assert_names_contain(src, Language::Java, &["Foo", "bar"]);
     }
 
     #[test]

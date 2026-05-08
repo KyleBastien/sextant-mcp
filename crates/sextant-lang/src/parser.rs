@@ -8,6 +8,8 @@ use tree_sitter::{Parser, Tree};
 pub enum Language {
     Rust,
     Python,
+    Go,
+    Java,
 }
 
 impl Language {
@@ -15,6 +17,8 @@ impl Language {
         match hint {
             "rust" => Some(Language::Rust),
             "python" => Some(Language::Python),
+            "go" => Some(Language::Go),
+            "java" => Some(Language::Java),
             _ => None,
         }
     }
@@ -23,6 +27,8 @@ impl Language {
         match self {
             Language::Rust => tree_sitter_rust::language(),
             Language::Python => tree_sitter_python::language(),
+            Language::Go => tree_sitter_go::language(),
+            Language::Java => tree_sitter_java::language(),
         }
     }
 }
