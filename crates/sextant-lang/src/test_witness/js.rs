@@ -203,10 +203,7 @@ mod tests {
 
     #[test]
     fn collects_default_named_export() {
-        let w = js_witness(
-            "export default function greet() {}\n",
-            Language::JavaScript,
-        );
+        let w = js_witness("export default function greet() {}\n", Language::JavaScript);
         let names: Vec<_> = w.pub_fns.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, vec!["greet"]);
     }
