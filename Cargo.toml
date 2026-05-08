@@ -11,6 +11,7 @@ members = [
     "crates/sextant-cli",
     "crates/sextant-mcp",
 ]
+exclude = ["docs"]
 
 [workspace.package]
 version = "0.1.0"

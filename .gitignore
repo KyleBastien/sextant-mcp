@@ -4,3 +4,8 @@ Cargo.lock.bak
 .sextant/cache/
 *.profraw
 .DS_Store
+
+# Astro docs site
+docs/node_modules/
+docs/dist/
+docs/.astro/
