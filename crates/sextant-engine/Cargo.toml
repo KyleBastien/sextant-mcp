@@ -1,0 +1,26 @@
+[package]
+name = "sextant-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Grading orchestration shared by the Sextant CLI and MCP server"
+
+[dependencies]
+sextant-core = { workspace = true }
+sextant-config = { workspace = true }
+sextant-rules = { workspace = true }
+sextant-diff = { workspace = true }
+sextant-judge = { workspace = true }
+ignore = { workspace = true }
+globset = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

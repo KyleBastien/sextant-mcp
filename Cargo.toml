@@ -1,0 +1,62 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sextant-core",
+    "crates/sextant-rules",
+    "crates/sextant-config",
+    "crates/sextant-diff",
+    "crates/sextant-lang",
+    "crates/sextant-judge",
+    "crates/sextant-engine",
+    "crates/sextant-cli",
+    "crates/sextant-mcp",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kylebastien/sextant-mcp"
+rust-version = "1.75"
+
+[workspace.dependencies]
+sextant-core = { path = "crates/sextant-core", version = "0.1.0" }
+sextant-rules = { path = "crates/sextant-rules", version = "0.1.0" }
+sextant-config = { path = "crates/sextant-config", version = "0.1.0" }
+sextant-diff = { path = "crates/sextant-diff", version = "0.1.0" }
+sextant-lang = { path = "crates/sextant-lang", version = "0.1.0" }
+sextant-engine = { path = "crates/sextant-engine", version = "0.1.0" }
+sextant-judge = { path = "crates/sextant-judge", version = "0.1.0" }
+
+anyhow = "1"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+clap = { version = "4", features = ["derive"] }
+ignore = "0.4"
+globset = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+git2 = { version = "0.19", default-features = false }
+tree-sitter = "0.22"
+tree-sitter-rust = "0.21"
+tree-sitter-python = "0.21"
+tree-sitter-go = "0.21"
+tree-sitter-java = "0.21"
+tree-sitter-typescript = "0.21"
+tree-sitter-javascript = "0.21"
+gray_matter = { version = "0.2", default-features = false, features = ["yaml"] }
+rust-embed = "8"
+regex = "1"
+async-trait = "0.1"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "net", "signal"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+blake3 = "1"
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
