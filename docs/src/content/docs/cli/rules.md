@@ -24,7 +24,7 @@ builtin.size.param-count          warn   file   builtin   Functions that take mo
 builtin.complexity.cyclomatic     warn   file   builtin   Functions with too many independent control-flow paths.
 builtin.complexity.nesting        warn   file   builtin   Functions with too many nested control structures.
 builtin.duplication.tokens        warn   file   builtin   Repeated runs of structurally-identical code within a file.
-builtin.tests.pub-fn-untested     info   file   builtin   Public Rust functions whose name is never mentioned in a `#[test]` body in the same file.
+builtin.tests.pub-fn-untested     info   file   builtin   Public Rust functions or exported JS/TS declarations whose name is never mentioned in an in-file test body.
 project.no-todo                   warn   file   repo      Disallow TODO comments in production code.
 ```
 

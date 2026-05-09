@@ -1,15 +1,20 @@
-//! Locate public functions and the bodies of `#[test]` functions in a
-//! Rust file. Used by the "pub fn without adjacent test" rule.
+//! Locate public functions and the bodies of test functions in a single
+//! source file. Used by the "pub fn without adjacent test" rule.
 //!
-//! Two structural decisions:
-//!   - Only fully-public `pub fn`. `pub(crate)`, `pub(super)`, `pub(in …)`
-//!     are intentionally excluded — they're internal API and the rule's
-//!     intent is "public surface should have a test next to it".
-//!   - Public functions inside a module whose preceding attribute is
+//! Two structural decisions, applied per-language:
+//!   - Rust: only fully-public `pub fn`. `pub(crate)`, `pub(super)`,
+//!     `pub(in …)` are intentionally excluded — they're internal API and
+//!     the rule's intent is "public surface should have a test next to
+//!     it". Public functions inside a module whose preceding attribute is
 //!     `#[cfg(test)]` are excluded — those are test helpers, not part of
 //!     the public surface.
+//!   - JS/TS/TSX: see [`mod@js`].
+
+mod js;
 
 use tree_sitter::{Node, TreeCursor};
+
+pub use js::js_test_witness;
 
 use crate::parser::{Language, ParsedFile};
 
@@ -41,6 +46,16 @@ pub fn rust_test_witness(parsed: &ParsedFile) -> TestWitness {
     let mut cursor = parsed.tree.walk();
     walk(&mut cursor, &mut state, /*in_cfg_test=*/ false);
     state.out
+}
+
+/// Dispatch to the language-appropriate witness collector. Returns an
+/// empty witness for unsupported languages.
+pub fn test_witness(parsed: &ParsedFile) -> TestWitness {
+    match parsed.language {
+        Language::Rust => rust_test_witness(parsed),
+        Language::JavaScript | Language::TypeScript | Language::Tsx => js_test_witness(parsed),
+        _ => TestWitness::default(),
+    }
 }
 
 struct WalkState<'a> {
@@ -298,5 +313,15 @@ mod tests {
         let w = rust_test_witness(&parsed);
         assert!(w.pub_fns.is_empty());
         assert!(w.test_haystack.is_empty());
+    }
+
+    #[test]
+    fn dispatch_picks_correct_witness() {
+        let rs = parse("pub fn r() {}\n", Language::Rust).unwrap();
+        assert_eq!(test_witness(&rs).pub_fns.len(), 1);
+        let js = parse("export function j() {}\n", Language::JavaScript).unwrap();
+        assert_eq!(test_witness(&js).pub_fns.len(), 1);
+        let py = parse("def p(): pass\n", Language::Python).unwrap();
+        assert!(test_witness(&py).pub_fns.is_empty());
     }
 }
