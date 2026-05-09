@@ -1,0 +1,32 @@
+[package]
+name = "sextant-lsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Sextant LSP server (in-editor diagnostics + hover-to-explain)"
+
+[[bin]]
+name = "sextant-lsp"
+path = "src/main.rs"
+
+[dependencies]
+sextant-engine = { workspace = true }
+sextant-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true, features = ["io-std", "time"] }
+tower-lsp = { workspace = true }
+dashmap = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

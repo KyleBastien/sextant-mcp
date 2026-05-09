@@ -54,6 +54,39 @@ fn grade_files_returns_findings() {
 }
 
 #[test]
+fn grade_file_buffer_uses_overlay_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        ".sextant/config.toml",
+        "[size]\nfile_length_warn = 10\nfile_length_error = 20\n",
+    );
+    write(root, "long.rs", "x\n");
+
+    let overlay = SourceFile::new(root.join("long.rs"), "x\n".repeat(25));
+    let report = grade_file_buffer(root, overlay, GradeOptions::default()).unwrap();
+    assert!(report
+        .findings
+        .iter()
+        .any(|f| f.rule_id == "builtin.size.file-length"));
+}
+
+#[test]
+fn grade_file_buffer_respects_path_excludes() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        ".sextant/config.toml",
+        "[paths]\nexclude = [\"vendor/**\"]\n[size]\nfile_length_warn = 5\nfile_length_error = 10\n",
+    );
+    let overlay = SourceFile::new(root.join("vendor/long.rs"), "x\n".repeat(25));
+    let report = grade_file_buffer(root, overlay, GradeOptions::default()).unwrap();
+    assert!(report.findings.is_empty());
+}
+
+#[test]
 fn list_rules_returns_builtins() {
     let dir = tempfile::tempdir().unwrap();
     let rules = list_rules(dir.path()).unwrap();

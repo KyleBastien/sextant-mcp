@@ -47,6 +47,10 @@ export default defineConfig({
 					items: [{ autogenerate: { directory: 'plugin' } }],
 				},
 				{
+					label: 'Editor Integration',
+					items: [{ autogenerate: { directory: 'editor' } }],
+				},
+				{
 					label: 'Rules Catalog',
 					items: [{ autogenerate: { directory: 'rules' } }],
 				},

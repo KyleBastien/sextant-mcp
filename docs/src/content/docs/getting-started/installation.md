@@ -5,14 +5,17 @@ sidebar:
   order: 1
 ---
 
-Sextant ships two binaries:
+Sextant ships three binaries:
 
 - **`sextant`** — the CLI used for ad-hoc grading and by the GitHub Action.
 - **`sextant-mcp`** — the MCP server used by Claude Code, Claude Desktop,
   and any other MCP client.
+- **`sextant-lsp`** — the LSP server used by VS Code, Neovim, Helix, and
+  any other LSP client. See [Editor integration](/sextant-mcp/editor/).
 
-Most users want both on `PATH`. The CLI alone is enough for CI; the MCP
-server alone is enough for editor-only use.
+Most users want all three on `PATH`. The CLI alone is enough for CI; the
+MCP server alone is enough for AI-agent use; the LSP server alone is
+enough for editor-only use.
 
 ## Release builds (recommended)
 
@@ -59,10 +62,11 @@ git clone https://github.com/kylebastien/sextant-mcp
 cd sextant-mcp
 cargo install --path crates/sextant-cli
 cargo install --path crates/sextant-mcp
+cargo install --path crates/sextant-lsp
 ```
 
-Both binaries land in `~/.cargo/bin`, which `rustup` puts on `PATH` by
-default.
+All three binaries land in `~/.cargo/bin`, which `rustup` puts on `PATH`
+by default.
 
 To build the workspace without installing:
 
@@ -77,6 +81,7 @@ cargo build --workspace --release
 ```sh
 sextant --version
 sextant-mcp --version
+sextant-lsp --version
 ```
 
 If `command not found`, check that the install directory (e.g.,
@@ -93,3 +98,5 @@ echo $PATH | tr ':' '\n' | grep -E '\.local/bin|\.cargo/bin'
 - [Bootstrap a config with `sextant init`](/sextant-mcp/getting-started/init/).
 - [Install the Claude Code plugin](/sextant-mcp/plugin/) for in-editor
   grading during the agent loop.
+- [Install the VS Code extension](/sextant-mcp/editor/vscode/) for live
+  diagnostics in the editor.
