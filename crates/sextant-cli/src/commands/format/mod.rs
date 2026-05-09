@@ -11,7 +11,7 @@ pub use markdown::markdown_pr;
 pub use review::review_json_pr;
 pub use sarif::sarif;
 
-use sextant_core::{BaselineDelta, Report, Verdict};
+use sextant_core::{BaselineDelta, Report, SeverityCounts, Verdict};
 use sextant_engine::PrReport;
 
 /// Marker comment embedded in every Sextant-authored PR review. The
@@ -54,8 +54,13 @@ pub fn json_pr(pr: &PrReport) -> Result<String, serde_json::Error> {
 /// shared by both the markdown and review-JSON formatters.
 pub(crate) fn verdict_line(verdict: &Verdict, delta: &BaselineDelta) -> String {
     match verdict {
-        Verdict::Approve => format!(
+        Verdict::Approve if delta.new_findings.is_empty() => format!(
             "**Verdict:** :white_check_mark: APPROVE — no new issues ({} unchanged).",
+            delta.unchanged
+        ),
+        Verdict::Approve => format!(
+            "**Verdict:** :white_check_mark: APPROVE — {} under thresholds ({} unchanged).",
+            severity_breakdown(&delta.new_counts),
             delta.unchanged
         ),
         Verdict::RequestChanges { reasons } => {
@@ -66,6 +71,28 @@ pub(crate) fn verdict_line(verdict: &Verdict, delta: &BaselineDelta) -> String {
             }
             s
         }
+    }
+}
+
+fn severity_breakdown(c: &SeverityCounts) -> String {
+    let mut parts = Vec::new();
+    if c.error > 0 {
+        parts.push(format!("{} new error{}", c.error, plural(c.error)));
+    }
+    if c.warn > 0 {
+        parts.push(format!("{} new warning{}", c.warn, plural(c.warn)));
+    }
+    if c.info > 0 {
+        parts.push(format!("{} new info", c.info));
+    }
+    parts.join(", ")
+}
+
+fn plural(n: u32) -> &'static str {
+    if n == 1 {
+        ""
+    } else {
+        "s"
     }
 }
 
@@ -122,5 +149,34 @@ mod tests {
             &d
         )
         .contains("REQUEST_CHANGES"));
+    }
+
+    #[test]
+    fn approve_with_subthreshold_findings_does_not_claim_no_new_issues() {
+        let infos: Vec<Finding> = (0..4)
+            .map(|i| Finding::new("r", Severity::Info, format!("a{i}.rs"), "m"))
+            .collect();
+        let delta = BaselineDelta::compute(&infos, &[], None);
+        let line = verdict_line(&Verdict::Approve, &delta);
+        assert!(line.contains("APPROVE"));
+        assert!(
+            !line.contains("no new issues"),
+            "headline lied about new issues: {line}"
+        );
+        assert!(line.contains("4 new info"));
+        assert!(line.contains("under thresholds"));
+    }
+
+    #[test]
+    fn severity_breakdown_pluralizes_and_orders_high_to_low() {
+        let c = SeverityCounts {
+            info: 4,
+            warn: 2,
+            error: 1,
+        };
+        assert_eq!(
+            severity_breakdown(&c),
+            "1 new error, 2 new warnings, 4 new info"
+        );
     }
 }
