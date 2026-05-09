@@ -1,5 +1,7 @@
 use super::*;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 use std::process::Command;
 
 fn git(dir: &Path, args: &[&str]) {
@@ -16,6 +18,18 @@ fn init_repo(dir: &Path) {
     git(dir, &["config", "user.email", "test@example.com"]);
     git(dir, &["config", "user.name", "Test"]);
     git(dir, &["config", "commit.gpgsign", "false"]);
+}
+
+fn commit_initial(root: &Path, files: &[(&str, &[u8])]) {
+    for (rel, content) in files {
+        let abs = root.join(rel);
+        if let Some(parent) = abs.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(abs, content).unwrap();
+    }
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
 }
 
 #[test]
@@ -49,12 +63,14 @@ fn files_at_ref_reads_full_tree() {
     let root = dir.path();
     init_repo(root);
 
-    fs::write(root.join("a.txt"), "alpha\n").unwrap();
-    fs::create_dir(root.join("sub")).unwrap();
-    fs::write(root.join("sub").join("b.txt"), "beta\n").unwrap();
-    fs::write(root.join("c.bin"), [0xff, 0xfe, 0xfd]).unwrap();
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "init"]);
+    commit_initial(
+        root,
+        &[
+            ("a.txt", b"alpha\n"),
+            ("sub/b.txt", b"beta\n"),
+            ("c.bin", &[0xff, 0xfe, 0xfd]),
+        ],
+    );
 
     let snap = files_at_ref(root, "HEAD").expect("snapshot");
     let paths: Vec<_> = snap.files.iter().map(|(p, _)| p.clone()).collect();
@@ -98,4 +114,28 @@ fn ref_to_ref_diff() {
     let a = diff.file_for(Path::new("a.txt")).expect("a.txt in diff");
     assert!(a.changed_lines.contains(&2));
     assert_eq!(a.head_contents.as_deref(), Some("one\ntwo\n"));
+}
+
+// Regression test: a tracked symlink whose target is a directory must
+// not crash the diff. Sextant's dogfooding setup puts `.claude/skills`
+// as a symlink to `plugin/skills`; previously this surfaced as
+// `io: Is a directory (os error 21)` and aborted the entire PR grade.
+#[cfg(unix)]
+#[test]
+fn directory_symlink_in_diff_is_skipped_not_crashed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    commit_initial(root, &[("real_dir/inner.txt", b"inner\n")]);
+
+    symlink("real_dir", root.join("dir_link")).unwrap();
+    git(root, &["add", "dir_link"]);
+
+    let diff = compute(root, &BaseSpec::Ref("HEAD".into()), &HeadSpec::WorkingTree)
+        .expect("diff should not error on directory symlinks");
+
+    assert!(
+        diff.file_for(Path::new("dir_link")).is_none(),
+        "directory symlink should be filtered from the diff entries"
+    );
 }

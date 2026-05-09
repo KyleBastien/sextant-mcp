@@ -196,6 +196,14 @@ fn collect_files(
 
     diff.foreach(
         &mut |delta, _progress| {
+            // Skip entries that don't have gradable file content: symlinks
+            // (the blob is just a target path), submodule pointers
+            // (Commit), and tree entries. Without this, a symlink-to-
+            // directory crashes `read_to_string` with `IsADirectory` and
+            // aborts the whole grade.
+            if !is_gradable_blob(delta.new_file().mode()) {
+                return true;
+            }
             acc.borrow_mut().push(DiffFile {
                 path: delta_path(&delta),
                 status: change_kind(delta.status()),
@@ -233,6 +241,16 @@ fn collect_files(
     Ok(files)
 }
 
+/// True only for ordinary file blobs that should be passed to rule
+/// evaluators. Symlinks, submodule pointers, and tree entries don't
+/// have gradable content and are filtered out at the diff-walk level.
+fn is_gradable_blob(mode: git2::FileMode) -> bool {
+    matches!(
+        mode,
+        git2::FileMode::Blob | git2::FileMode::BlobExecutable | git2::FileMode::BlobGroupWritable
+    )
+}
+
 fn read_head(
     repo: &Repository,
     repo_root: &Path,
@@ -247,6 +265,14 @@ fn read_head(
 
 fn read_workdir(repo_root: &Path, path: &Path) -> DiffResult<Option<String>> {
     let abs = repo_root.join(path);
+    // Defensive guard: if the path resolves to a directory (e.g. a
+    // symlink whose target is a directory and that slipped past the
+    // mode filter), skip rather than crashing the grade.
+    match std::fs::metadata(&abs) {
+        Ok(meta) if !meta.is_file() => return Ok(None),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        _ => {}
+    }
     match std::fs::read_to_string(&abs) {
         Ok(s) => Ok(Some(s)),
         // NotFound = file deleted in workdir but still in tree; InvalidData
