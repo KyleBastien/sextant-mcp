@@ -1,9 +1,13 @@
-# Sextant config for the Sextant repo. This is the canonical example
-# of what a project ships in `.sextant/config.toml`.
+# Sextant config for the Sextant repo. We dogfood our own grader, so
+# the verdict thresholds are deliberately strict: zero errors, zero
+# warns. Combined with `SEXTANT_ENFORCE_ON_STOP=1` (set in
+# `.claude/settings.json`), the agent loop must drive every diff to a
+# clean grade before ending its turn, and CI fails the PR on any
+# regression at warn or above.
 
 [verdict]
 max_errors = 0
-max_warns = 50
+max_warns = 0
 
 [size]
 file_length_warn = 400

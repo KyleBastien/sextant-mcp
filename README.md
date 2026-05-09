@@ -206,8 +206,8 @@ cargo fmt --all -- --check
 ```
 
 The repo is graded by Sextant itself (see
-`.github/workflows/sextant-grade.yml`). PRs that introduce new errors
-will fail the gate; pre-existing findings won't.
+`.github/workflows/sextant-grade.yml`). PRs that introduce new findings
+at warn or above will fail the gate; pre-existing findings won't.
 
 ## License
 

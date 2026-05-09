@@ -49,11 +49,11 @@ jobs:
             --format markdown \
             --output sextant-review.md \
             --report-json sextant-report.json \
-            --fail-on error || grade_status=$?
+            --fail-on warn || grade_status=$?
           ./action/scripts/post-review.sh sextant-review.md
           exit "${grade_status:-0}"
 
       - name: Grade main
         if: github.event_name == 'push'
         run: |
-          ./target/release/sextant grade --fail-on error
+          ./target/release/sextant grade --fail-on warn
