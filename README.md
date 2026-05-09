@@ -5,7 +5,55 @@ LLM judges, surfaced inside the agent loop and on every PR.
 
 📖 **[Documentation →](https://kylebastien.github.io/sextant-mcp/)**
 
-One engine, four surfaces:
+## What is Sextant, and when should I use it?
+
+Sextant is a code-quality grader built for codebases where AI agents
+(Claude Code, Cursor, Copilot, …) write a real share of the code.
+
+**Imagine** you want every diff — agent-written or human-written — to
+stay within your team's bar for file length, function length,
+complexity, duplication, test coverage, and whatever other house
+rules you have.
+
+**Usually** you only find out a diff is over the line one of three
+ways:
+
+- a teammate catches it in PR review, hours or days later;
+- CI lint or format jobs flag it after the agent has already
+  finished its turn and moved on;
+- you read the diff yourself, decide the function is too long or
+  duplicates something, and either fix it by hand or feed the
+  complaint back to the agent as a follow-up prompt.
+
+All three are reactive. By the time the feedback lands, the agent's
+context is cold and the cleanup falls on you.
+
+**Sextant moves that feedback into the loop.** The same grader runs
+in two places:
+
+- **inside the agent**, as an MCP tool and Claude Code hooks — the
+  agent grades its own diff after every edit and self-corrects
+  before ending the turn;
+- **on every PR**, as a GitHub Action that posts a single review
+  comment and only blocks merge on regressions, so pre-existing
+  debt doesn't gate new work.
+
+One `.sextant/` config drives both. You customize:
+
+- **what counts as a finding** — thresholds for the built-in size,
+  complexity, duplication, and untested-public-function rules, plus
+  your own markdown rules judged by Claude or GPT against individual
+  files;
+- **how strict the verdict is** — how many errors or warnings flip a
+  grade from `approve` to `request_changes`;
+- **what the grader looks at** — just the diff (default; fast,
+  ignores legacy debt), the touched files, or the whole repo.
+
+If you're hand-reviewing every agent diff for the same handful of
+issues, or watching CI flag the same things over and over, Sextant
+is the loop you're missing.
+
+## One engine, four surfaces
 
 - **MCP server** — agents call `grade_diff` after each edit and
   self-correct before finishing the turn.
