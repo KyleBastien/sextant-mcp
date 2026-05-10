@@ -11,7 +11,7 @@
       "release-type": "rust"
     },
     "editors/vscode": {
-      "package-name": "sextant-vscode",
+      "package-name": "sextant-mcp",
       "release-type": "node",
       "component": "vscode",
       "include-component-in-tag": true
