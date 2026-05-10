@@ -70,6 +70,10 @@ enum Cmd {
         /// CI runs that should never touch the network.
         #[arg(long)]
         no_llm: bool,
+        /// Render proposed-fix patches inline in the human formatter.
+        /// Other formats (JSON, SARIF, markdown) always include patches.
+        #[arg(long)]
+        show_patches: bool,
     },
     /// Rule introspection commands.
     Rules {
@@ -159,6 +163,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             report_json,
             fail_on,
             no_llm,
+            show_patches,
         } => commands::grade::run(GradeArgs {
             paths,
             diff,
@@ -172,6 +177,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             report_json,
             fail_on,
             no_llm,
+            show_patches,
         }),
         Cmd::Rules { cmd } => dispatch_rules(cmd),
         Cmd::Init { template, force } => commands::init::run(template, force),

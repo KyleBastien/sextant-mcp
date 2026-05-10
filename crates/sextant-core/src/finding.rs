@@ -30,6 +30,12 @@ pub struct Finding {
     pub line: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_line: Option<u32>,
+    /// Proposed fix as a unified diff against `path`. Optional — present
+    /// only when an evaluator (or the LLM-synthesis pass) can produce a
+    /// concrete replacement. Consumers render or apply it; Sextant never
+    /// writes to the working tree itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
 }
 
 impl Finding {
@@ -46,6 +52,7 @@ impl Finding {
             path: path.into(),
             line: None,
             end_line: None,
+            patch: None,
         }
     }
 
@@ -57,6 +64,11 @@ impl Finding {
     pub fn spanning(mut self, start: u32, end: u32) -> Self {
         self.line = Some(start);
         self.end_line = Some(end);
+        self
+    }
+
+    pub fn with_patch(mut self, patch: impl Into<String>) -> Self {
+        self.patch = Some(patch.into());
         self
     }
 
@@ -119,6 +131,29 @@ mod tests {
     fn identity_is_stable_across_line_shifts() {
         let a = Finding::new("r", Severity::Warn, "a.rs", "msg").at_line(10);
         let b = Finding::new("r", Severity::Warn, "a.rs", "msg").at_line(42);
+        assert_eq!(a.identity(), b.identity());
+    }
+
+    #[test]
+    fn with_patch_attaches_diff() {
+        let f = Finding::new("r", Severity::Warn, "a.rs", "msg").with_patch("--- a\n+++ b\n");
+        assert_eq!(f.patch.as_deref(), Some("--- a\n+++ b\n"));
+    }
+
+    #[test]
+    fn patch_round_trips_through_serde() {
+        let f = Finding::new("r", Severity::Warn, "a.rs", "msg")
+            .at_line(3)
+            .with_patch("p");
+        let s = serde_json::to_string(&f).unwrap();
+        let back: Finding = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.patch.as_deref(), Some("p"));
+    }
+
+    #[test]
+    fn identity_does_not_depend_on_patch() {
+        let a = Finding::new("r", Severity::Warn, "a.rs", "msg");
+        let b = Finding::new("r", Severity::Warn, "a.rs", "msg").with_patch("p");
         assert_eq!(a.identity(), b.identity());
     }
 

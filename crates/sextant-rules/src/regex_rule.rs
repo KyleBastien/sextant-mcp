@@ -3,11 +3,16 @@ use regex::Regex;
 use sextant_core::{EvalContext, Evaluator, Finding, Rule, SourceFile};
 
 use crate::loader::ParsedRule;
+use crate::patch::replace_line_diff;
 
 pub struct RegexRule {
     rule: Rule,
     re: Regex,
     exclude: GlobSet,
+    /// Replacement template using regex-crate substitution syntax (e.g.
+    /// `$1`, `$name`). When set, every match yields a unified-diff patch
+    /// that rewrites that match in place on the affected line.
+    replacement: Option<String>,
 }
 
 impl RegexRule {
@@ -15,6 +20,7 @@ impl RegexRule {
         parsed: ParsedRule,
         pattern: &str,
         exclude_paths: &[String],
+        replacement: Option<&str>,
     ) -> RegexBuildResult {
         let re = match Regex::new(pattern) {
             Ok(re) => re,
@@ -51,7 +57,12 @@ impl RegexRule {
             tags: parsed.tags,
             source: parsed.source,
         };
-        Ok(Self { rule, re, exclude })
+        Ok(Self {
+            rule,
+            re,
+            exclude,
+            replacement: replacement.map(str::to_string),
+        })
     }
 }
 
@@ -85,17 +96,74 @@ impl Evaluator for RegexRule {
         }
         let mut out = Vec::new();
         for (i, line) in file.contents.lines().enumerate() {
-            for m in self.re.find_iter(line) {
-                let snippet = m.as_str();
-                let msg = format!("{}: matched `{}`", self.rule.name, snippet);
-                out.push(
-                    Finding::new(&self.rule.id, self.rule.severity, rel.clone(), msg)
-                        .at_line(i as u32 + 1),
-                );
-            }
+            let cursor = LineCursor {
+                contents: &file.contents,
+                rel: &rel,
+                line,
+                line_no: i as u32 + 1,
+            };
+            self.collect_line_findings(cursor, &mut out);
         }
         out
     }
+}
+
+/// One physical line's worth of context for the regex pass: the
+/// surrounding file (for patch construction), the path (for diff
+/// headers), the line itself (the match haystack), and the 1-indexed
+/// line number.
+struct LineCursor<'a> {
+    contents: &'a str,
+    rel: &'a std::path::Path,
+    line: &'a str,
+    line_no: u32,
+}
+
+impl RegexRule {
+    /// Push every match on `cursor.line` into `out` as a `Finding`,
+    /// attaching a patch when the rule has a `replacement` template.
+    fn collect_line_findings(&self, cursor: LineCursor<'_>, out: &mut Vec<Finding>) {
+        for m in self.re.find_iter(cursor.line) {
+            let snippet = m.as_str();
+            let msg = format!("{}: matched `{}`", self.rule.name, snippet);
+            let mut finding = Finding::new(
+                &self.rule.id,
+                self.rule.severity,
+                cursor.rel.to_path_buf(),
+                msg,
+            )
+            .at_line(cursor.line_no);
+            if let Some(patch) = self.patch_for(cursor.rel, cursor.contents, cursor.line_no) {
+                finding = finding.with_patch(patch);
+            }
+            out.push(finding);
+        }
+    }
+
+    fn patch_for(&self, rel: &std::path::Path, contents: &str, line_no: u32) -> Option<String> {
+        let template = self.replacement.as_deref()?;
+        line_replacement_patch(&self.re, rel, contents, line_no, template)
+    }
+}
+
+/// Run the regex replacement on the given line and emit a unified diff
+/// against `path`. Returns `None` when the resulting line is identical
+/// (no-op replacement) so we don't ship empty hunks.
+fn line_replacement_patch(
+    re: &Regex,
+    path: &std::path::Path,
+    contents: &str,
+    line_no: u32,
+    template: &str,
+) -> Option<String> {
+    let original_line = contents.split_inclusive('\n').nth((line_no - 1) as usize)?;
+    let stripped = original_line.strip_suffix('\n').unwrap_or(original_line);
+    let replaced = re.replace_all(stripped, template);
+    let new_line: &str = replaced.as_ref();
+    if new_line == stripped {
+        return None;
+    }
+    replace_line_diff(path, contents, line_no, new_line)
 }
 
 #[cfg(test)]
@@ -110,6 +178,10 @@ mod tests {
     }
 
     fn build(pat: &str, exclude: &[&str]) -> RegexRule {
+        build_with(pat, exclude, None)
+    }
+
+    fn build_with(pat: &str, exclude: &[&str], replacement: Option<&str>) -> RegexRule {
         let parsed = parse_rule_md(
             r#"---
 id: test.todo
@@ -125,7 +197,7 @@ evaluator: { type: regex, pattern: "TODO" }
         )
         .unwrap();
         let exclude: Vec<String> = exclude.iter().map(|s| s.to_string()).collect();
-        RegexRule::from_parsed(parsed, pat, &exclude).unwrap()
+        RegexRule::from_parsed(parsed, pat, &exclude, replacement).unwrap()
     }
 
     #[test]
@@ -137,6 +209,28 @@ evaluator: { type: regex, pattern: "TODO" }
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].line, Some(2));
         assert_eq!(f[0].severity, Severity::Warn);
+    }
+
+    #[test]
+    fn replacement_attaches_unified_diff_patch() {
+        let rule = build_with(r"\bvar\b", &[], Some("let"));
+        let file = SourceFile::new("a.ts", "var x = 1;\nlet y = 2;\n");
+        let root = std::env::current_dir().unwrap();
+        let f = rule.evaluate_file(&file, &ctx(&root));
+        assert_eq!(f.len(), 1);
+        let patch = f[0].patch.as_deref().expect("patch attached");
+        assert!(patch.contains("@@ -1,1 +1,1 @@"), "patch was: {patch}");
+        assert!(patch.contains("-var x = 1;"), "patch was: {patch}");
+        assert!(patch.contains("+let x = 1;"), "patch was: {patch}");
+    }
+
+    #[test]
+    fn no_replacement_means_no_patch() {
+        let rule = build(r"TODO", &[]);
+        let file = SourceFile::new("a.rs", "// TODO\n");
+        let root = std::env::current_dir().unwrap();
+        let f = rule.evaluate_file(&file, &ctx(&root));
+        assert!(f[0].patch.is_none());
     }
 
     #[test]

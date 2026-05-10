@@ -45,6 +45,7 @@ pub struct GradeArgs {
     pub report_json: Option<PathBuf>,
     pub fail_on: FailOn,
     pub no_llm: bool,
+    pub show_patches: bool,
 }
 
 pub(crate) fn run(args: GradeArgs) -> Result<ExitCode> {
@@ -74,7 +75,7 @@ fn run_normal(cwd: &std::path::Path, args: GradeArgs) -> Result<ExitCode> {
         },
     )
     .context("grading")?;
-    let rendered = render_normal(&report, args.format)?;
+    let rendered = render_normal(&report, args.format, args.show_patches)?;
     emit(rendered, args.output.as_deref())?;
     if let Some(path) = args.report_json.as_deref() {
         write_json(path, &report).context("writing --report-json")?;
@@ -98,7 +99,7 @@ fn run_pr(cwd: &std::path::Path, args: GradeArgs) -> Result<ExitCode> {
         },
     )
     .context("grading PR")?;
-    let rendered = render_pr(&pr, args.format)?;
+    let rendered = render_pr(&pr, args.format, args.show_patches)?;
     emit(rendered, args.output.as_deref())?;
     if let Some(path) = args.report_json.as_deref() {
         write_json(path, &pr).context("writing --report-json")?;
@@ -113,9 +114,9 @@ fn write_json<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Result<
     Ok(())
 }
 
-fn render_normal(report: &Report, format: Format) -> Result<String> {
+fn render_normal(report: &Report, format: Format, show_patches: bool) -> Result<String> {
     Ok(match format {
-        Format::Human => format::human(report),
+        Format::Human => format::human_with(report, show_patches),
         Format::Json => format::json(report)?,
         Format::Sarif => format::sarif(report)?,
         // `Markdown` and `ReviewJson` need a baseline. Outside `--pr`
@@ -125,9 +126,9 @@ fn render_normal(report: &Report, format: Format) -> Result<String> {
     })
 }
 
-fn render_pr(pr: &PrReport, format: Format) -> Result<String> {
+fn render_pr(pr: &PrReport, format: Format, show_patches: bool) -> Result<String> {
     Ok(match format {
-        Format::Human => format::human(&pr.head),
+        Format::Human => format::human_with(&pr.head, show_patches),
         Format::Json => format::json_pr(pr)?,
         Format::Markdown => format::markdown_pr(pr),
         Format::Sarif => format::sarif(&pr.head)?,

@@ -19,8 +19,13 @@ work through them before ending the turn.
    warns). For ties, take the one closest to the lines you just
    touched — that's almost always the cause.
 4. Read the rule body via `explain_rule` if the rule id is unfamiliar.
-5. Apply the smallest plausible fix. Don't refactor the universe.
-6. Re-run `grade_diff`. Go to (2).
+5. **Check for a `patch` field.** If the finding includes one, apply
+   that diff with your edit tools — it's the proposed fix. Sextant
+   never writes to disk itself, so you have to apply. Skip this step
+   only if the patch is wrong on its face.
+6. Otherwise, apply the smallest plausible fix. Don't refactor the
+   universe.
+7. Re-run `grade_diff`. Go to (2).
 
 ## Budget
 

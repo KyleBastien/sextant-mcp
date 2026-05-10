@@ -33,6 +33,7 @@ pub struct Config {
     pub duplication: DuplicationRuleConfig,
     pub paths: PathsConfig,
     pub judge: JudgeConfig,
+    pub autofix: AutofixConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +213,30 @@ impl Default for JudgeConfig {
     }
 }
 
+/// Autofix-pass tuning. By default, native generators (regex
+/// `replacement`, pub_fn_test stubs, LLM-rule patches) are on and the
+/// LLM-synthesis fallback is off. Opt in with `llm_synthesis = true` to
+/// have the judge propose patches for findings whose evaluator can't
+/// produce one mechanically. `max_synthesis_findings` is a cost guard so
+/// a noisy run doesn't translate into a noisy bill.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AutofixConfig {
+    pub enabled: bool,
+    pub llm_synthesis: bool,
+    pub max_synthesis_findings: u32,
+}
+
+impl Default for AutofixConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            llm_synthesis: false,
+            max_synthesis_findings: 25,
+        }
+    }
+}
+
 impl PathsConfig {
     pub fn matcher(&self) -> Result<GlobSet, ConfigError> {
         let mut builder = GlobSetBuilder::new();
@@ -249,6 +274,18 @@ impl Config {
 mod tests {
     use super::*;
 
+    /// Spin up a temp repo, write `body` to its `.sextant/config.toml`,
+    /// and return the loaded `Config`. The test holds onto the
+    /// `TempDir` so files survive until the assertion phase.
+    fn write_and_load(body: &str) -> (tempfile::TempDir, Config) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".sextant").join("config.toml");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, body).unwrap();
+        let cfg = Config::from_repo_root(dir.path()).unwrap();
+        (dir, cfg)
+    }
+
     #[test]
     fn defaults_load_when_file_missing() {
         let dir = tempfile::tempdir().unwrap();
@@ -266,15 +303,9 @@ mod tests {
 
     #[test]
     fn parses_overrides() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(".sextant").join("config.toml");
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(
-            &path,
+        let (_dir, cfg) = write_and_load(
             "[verdict]\nmax_errors = 2\nmax_warns = 5\nmax_info = 0\n[size]\nfile_length_warn = 100\nfile_length_error = 200\n",
-        )
-        .unwrap();
-        let cfg = Config::from_repo_root(dir.path()).unwrap();
+        );
         assert_eq!(cfg.verdict.max_errors, 2);
         assert_eq!(cfg.verdict.max_warns, 5);
         assert_eq!(cfg.verdict.max_info, 0);
@@ -295,12 +326,24 @@ mod tests {
     }
 
     #[test]
+    fn autofix_defaults_keep_llm_synthesis_off() {
+        let cfg = Config::default();
+        assert!(cfg.autofix.enabled);
+        assert!(!cfg.autofix.llm_synthesis);
+        assert_eq!(cfg.autofix.max_synthesis_findings, 25);
+    }
+
+    #[test]
+    fn autofix_section_round_trips() {
+        let (_dir, cfg) =
+            write_and_load("[autofix]\nllm_synthesis = true\nmax_synthesis_findings = 5\n");
+        assert!(cfg.autofix.llm_synthesis);
+        assert_eq!(cfg.autofix.max_synthesis_findings, 5);
+    }
+
+    #[test]
     fn user_paths_replaces_defaults() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(".sextant").join("config.toml");
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, "[paths]\nexclude = [\"**/secret/**\"]\n").unwrap();
-        let cfg = Config::from_repo_root(dir.path()).unwrap();
+        let (_dir, cfg) = write_and_load("[paths]\nexclude = [\"**/secret/**\"]\n");
         let m = cfg.paths.matcher().unwrap();
         assert!(m.is_match("a/secret/b.rs"));
         assert!(!m.is_match("Cargo.lock"));

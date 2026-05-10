@@ -17,6 +17,7 @@ pub mod loader;
 pub mod lock;
 mod merge;
 mod param_count;
+mod patch;
 mod pub_fn_test;
 mod regex_rule;
 
@@ -122,7 +123,8 @@ fn build_evaluator(
         EvaluatorSpec::Regex {
             pattern,
             exclude_paths,
-        } => build_regex(rule, &pattern, &exclude_paths).map(Some),
+            replacement,
+        } => build_regex(rule, &pattern, &exclude_paths, replacement.as_deref()).map(Some),
         EvaluatorSpec::Llm {
             model,
             max_tokens,
@@ -191,9 +193,10 @@ fn build_regex(
     rule: ParsedRule,
     pattern: &str,
     exclude_paths: &[String],
+    replacement: Option<&str>,
 ) -> Result<Arc<dyn Evaluator>, RuleSetError> {
     let id = rule.id.clone();
-    let built = RegexRule::from_parsed(rule, pattern, exclude_paths)
+    let built = RegexRule::from_parsed(rule, pattern, exclude_paths, replacement)
         .map_err(|source| RuleSetError::Regex { rule: id, source })?;
     Ok(Arc::new(built))
 }

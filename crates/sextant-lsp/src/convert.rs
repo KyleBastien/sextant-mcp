@@ -1,7 +1,16 @@
 //! `Finding` → LSP `Diagnostic` conversion.
 
+use serde::{Deserialize, Serialize};
 use sextant_core::{Finding, Severity};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range};
+
+/// Data we round-trip through `Diagnostic.data` so the `code_action`
+/// handler can rebuild a `WorkspaceEdit` without re-grading.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct DiagnosticData {
+    pub(crate) rule_id: String,
+    pub(crate) patch: String,
+}
 
 /// Convert a Sextant finding into an LSP diagnostic. `text` is the live
 /// buffer for the file (used to compute the end column in UTF-16 units;
@@ -15,6 +24,13 @@ pub(crate) fn finding_to_diagnostic(finding: &Finding, text: Option<&str>) -> Di
         (None, _) => (0, 0),
     };
     let end_col = end_of_line_utf16(text, end_line).unwrap_or(u32::MAX / 2);
+    let data = finding.patch.as_ref().and_then(|patch| {
+        serde_json::to_value(DiagnosticData {
+            rule_id: finding.rule_id.clone(),
+            patch: patch.clone(),
+        })
+        .ok()
+    });
     Diagnostic {
         range: Range {
             start: Position {
@@ -33,7 +49,7 @@ pub(crate) fn finding_to_diagnostic(finding: &Finding, text: Option<&str>) -> Di
         message: finding.message.clone(),
         related_information: None,
         tags: None,
-        data: None,
+        data,
     }
 }
 

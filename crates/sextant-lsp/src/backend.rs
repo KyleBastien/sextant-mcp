@@ -1,18 +1,24 @@
 //! `LanguageServer` implementation. Lifecycle methods funnel into the
 //! grader (`crate::grade`) and hover handler (`crate::hover`).
 
+use std::collections::HashMap;
+
 use serde::Deserialize;
 use sextant_engine::explain_rule;
 use tower_lsp::jsonrpc::Result as JsonrpcResult;
 use tower_lsp::lsp_types::{
-    DidChangeConfigurationParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams, Hover,
-    HoverParams, HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams,
-    MessageType, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
-    Url,
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams,
+    CodeActionProviderCapability, CodeActionResponse, Diagnostic, DidChangeConfigurationParams,
+    DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DidSaveTextDocumentParams, Hover, HoverParams,
+    HoverProviderCapability, InitializeParams, InitializeResult, InitializedParams, MessageType,
+    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, Url,
+    WorkspaceEdit,
 };
 use tower_lsp::LanguageServer;
 
+use crate::codeaction::patch_to_edits;
+use crate::convert::DiagnosticData;
 use crate::hover::hover_for_findings;
 use crate::state::{Backend, DocumentState, Settings};
 use crate::workspace::{resolve_repo_root, url_to_path};
@@ -59,6 +65,7 @@ impl LanguageServer for Backend {
                     TextDocumentSyncKind::FULL,
                 )),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -140,6 +147,24 @@ impl LanguageServer for Backend {
         self.regrade_all_open();
     }
 
+    async fn code_action(
+        &self,
+        params: CodeActionParams,
+    ) -> JsonrpcResult<Option<CodeActionResponse>> {
+        let uri = params.text_document.uri.clone();
+        let mut actions = Vec::new();
+        for diag in params.context.diagnostics {
+            if let Some(action) = code_action_from_diag(uri.clone(), diag) {
+                actions.push(CodeActionOrCommand::CodeAction(action));
+            }
+        }
+        if actions.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(actions))
+        }
+    }
+
     async fn hover(&self, params: HoverParams) -> JsonrpcResult<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
@@ -169,6 +194,32 @@ impl LanguageServer for Backend {
             lookup,
         ))
     }
+}
+
+/// Build a single QuickFix `CodeAction` from one diagnostic, if its
+/// `data` payload carries a Sextant patch we can apply. Returns `None`
+/// when the diagnostic isn't ours, has no patch, or the patch fails to
+/// parse — the editor falls back to whatever other actions are offered.
+fn code_action_from_diag(uri: Url, diag: Diagnostic) -> Option<CodeAction> {
+    let data = diag.data.clone()?;
+    let parsed: DiagnosticData = serde_json::from_value(data).ok()?;
+    let edits = patch_to_edits(&parsed.patch)?;
+    let mut changes = HashMap::new();
+    changes.insert(uri, edits);
+    Some(CodeAction {
+        title: format!("Sextant: fix {}", parsed.rule_id),
+        kind: Some(CodeActionKind::QUICKFIX),
+        diagnostics: Some(vec![diag]),
+        edit: Some(WorkspaceEdit {
+            changes: Some(changes),
+            document_changes: None,
+            change_annotations: None,
+        }),
+        command: None,
+        is_preferred: Some(true),
+        disabled: None,
+        data: None,
+    })
 }
 
 impl Backend {

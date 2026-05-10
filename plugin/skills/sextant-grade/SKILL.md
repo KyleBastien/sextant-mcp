@@ -32,6 +32,11 @@ Each finding has:
   default; warns are advisory.
 - `path` + `line`/`end_line` — where to look.
 - `message` — what's wrong, often with a fix suggestion.
+- `patch` (optional) — a unified diff against the file at HEAD that
+  proposes a concrete fix. When present, prefer applying the patch over
+  re-deriving the change from scratch: it's the rule (or the synthesis
+  judge) telling you what it expects. Use your normal edit tools to
+  apply; Sextant does not modify your working tree itself.
 
 Top-level fields:
 

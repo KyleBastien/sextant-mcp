@@ -87,7 +87,9 @@ mod tests {
                 message: "x".into(),
                 line: None,
                 end_line: None,
+                patch: None,
             }],
+            patch: None,
         }
     }
 
@@ -101,7 +103,10 @@ mod tests {
 
     #[tokio::test]
     async fn new_pops_responses_in_order() {
-        let two = JudgeResult { findings: vec![] };
+        let two = JudgeResult {
+            findings: vec![],
+            patch: None,
+        };
         let f = FakeJudge::new("p", vec![one(), two.clone()]);
         let a = f.judge(req("x")).await.unwrap();
         let b = f.judge(req("y")).await.unwrap();

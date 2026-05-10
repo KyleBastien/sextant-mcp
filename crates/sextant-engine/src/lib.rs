@@ -8,10 +8,11 @@
 
 mod judge_setup;
 mod pr;
+mod synthesize;
 
 pub use pr::{grade_pr, PrOptions, PrReport};
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use globset::GlobSet;
@@ -19,7 +20,7 @@ use ignore::WalkBuilder;
 use serde::Serialize;
 use sextant_config::{Config, ConfigError};
 use sextant_core::{
-    Category, EvalContext, Finding, Report, RuleSource, Scope, Severity, SourceFile,
+    Category, EvalContext, Finding, Report, Rule, RuleSource, Scope, Severity, SourceFile,
     VerdictThresholds,
 };
 use sextant_diff::{compute, BaseSpec, DiffError, DiffSet, HeadSpec};
@@ -83,10 +84,10 @@ pub fn grade_with(
     let config = Config::from_repo_root(repo_root)?;
     let exclude = config.paths.matcher().map_err(EngineError::Config)?;
     let judge = judge_setup::build_judge(repo_root, &config, &opts);
-    let ruleset = RuleSet::load_with(repo_root, &config, judge)?;
+    let ruleset = RuleSet::load_with(repo_root, &config, judge.clone())?;
     let ctx = EvalContext { repo_root };
 
-    let findings = match mode {
+    let (mut findings, files) = match mode {
         GradeMode::Files { paths } => {
             let targets = if paths.is_empty() {
                 vec![repo_root.to_path_buf()]
@@ -94,19 +95,43 @@ pub fn grade_with(
                 paths
             };
             let files = collect_source_files(repo_root, &targets, &exclude)?;
-            ruleset.grade_files(&files, &ctx)
+            let findings = ruleset.grade_files(&files, &ctx);
+            (findings, files)
         }
         GradeMode::Diff(opts) => {
             let diff = compute_diff(repo_root, &opts)?;
             let files = source_files_from_diff(repo_root, &diff, &exclude);
             let raw = ruleset.grade_files(&files, &ctx);
-            filter_to_diff(raw, &diff)
+            (filter_to_diff(raw, &diff), files)
         }
     };
+
+    let rules = collect_rules(&ruleset);
+    synthesize::run(
+        &mut findings,
+        synthesize::SynthesisInputs {
+            files: &files,
+            rules: &rules,
+            judge: judge.as_ref(),
+            autofix: &config.autofix,
+            judge_cfg: &config.judge,
+        },
+    );
 
     let thresholds: VerdictThresholds = (&config.verdict).into();
     let verdict = thresholds.evaluate(&findings);
     Ok(Report::build(findings, verdict))
+}
+
+fn collect_rules(ruleset: &RuleSet) -> HashMap<String, Rule> {
+    ruleset
+        .evaluators()
+        .iter()
+        .map(|ev| {
+            let r = ev.rule();
+            (r.id.clone(), r.clone())
+        })
+        .collect()
 }
 
 /// Grade a single in-memory buffer.
