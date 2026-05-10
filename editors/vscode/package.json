@@ -75,7 +75,9 @@
     "compile": "tsc -p .",
     "watch": "tsc -p . -w",
     "package": "vsce package",
-    "publish": "vsce publish"
+    "publish": "vsce publish",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
@@ -84,6 +86,7 @@
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^2.24.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^2.1.0"
   }
 }
