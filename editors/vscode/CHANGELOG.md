@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/KyleBastien/sextant-mcp/compare/vscode-v0.1.2...vscode-v0.1.3) (2026-05-10)
+
+
+### Bug Fixes
+
+* **vscode:** rename to sextant-mcp and drop AI-themed metadata ([#15](https://github.com/KyleBastien/sextant-mcp/issues/15)) ([98b4744](https://github.com/KyleBastien/sextant-mcp/commit/98b4744c2ad6218397f46b027863eb5fa04dfacb))
+
 ## [0.1.2](https://github.com/KyleBastien/sextant-mcp/compare/vscode-v0.1.1...vscode-v0.1.2) (2026-05-10)
 
 
