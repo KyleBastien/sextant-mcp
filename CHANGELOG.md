@@ -5,6 +5,19 @@
 
 ### Features
 
+* 5 strict TS pack rules for loose-typing escape hatches ([#21](https://github.com/KyleBastien/sextant-mcp/issues/21)) ([98823e5](https://github.com/KyleBastien/sextant-mcp/commit/98823e575e3fd00d2455ed165b7a9a8ed4e8353d))
+* propose-only autofix patches across all rule types ([#19](https://github.com/KyleBastien/sextant-mcp/issues/19)) ([9a66e71](https://github.com/KyleBastien/sextant-mcp/commit/9a66e71bb7f79e49ef12785213d8d6626a3c89e1))
+
+
+### Bug Fixes
+
+* roll release-please manifest back to unblock workflow ([#22](https://github.com/KyleBastien/sextant-mcp/issues/22)) ([d4505c9](https://github.com/KyleBastien/sextant-mcp/commit/d4505c97c9dd992b9f83565984e07a7762d79fe4))
+
+## [0.1.5](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.4...v0.1.5) (2026-05-10)
+
+
+### Features
+
 * propose-only autofix patches across all rule types ([#19](https://github.com/KyleBastien/sextant-mcp/issues/19)) ([9a66e71](https://github.com/KyleBastien/sextant-mcp/commit/9a66e71bb7f79e49ef12785213d8d6626a3c89e1))
 
 ## [0.1.4](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.3...v0.1.4) (2026-05-10)
