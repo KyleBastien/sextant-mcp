@@ -2,7 +2,7 @@
   "name": "sextant-mcp",
   "displayName": "Sextant",
   "description": "Live code-quality linter with inline diagnostics and hover-to-explain rule docs.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "kylebastien",
   "license": "MIT",
   "engines": {
