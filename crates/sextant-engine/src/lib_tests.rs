@@ -196,7 +196,10 @@ fn grade_pr_does_not_count_untouched_files_as_fixed_when_a_rule_is_added() {
     );
     write(root, "ok.rs", "fn ok() { /* unrelated */ }\n");
     git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "add marker rule and edit ok.rs"]);
+    git(
+        root,
+        &["commit", "-q", "-m", "add marker rule and edit ok.rs"],
+    );
 
     let pr = grade_pr(
         root,

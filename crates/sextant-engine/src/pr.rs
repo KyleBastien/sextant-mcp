@@ -79,11 +79,7 @@ pub fn grade_pr(
     // filter, the delta reflects only what the PR can plausibly affect.
     let baseline_in_scope = scope_baseline_to_diff(&baseline_report.findings, &head_diff);
 
-    let delta = BaselineDelta::compute(
-        &head_report.findings,
-        &baseline_in_scope,
-        Some(base_sha),
-    );
+    let delta = BaselineDelta::compute(&head_report.findings, &baseline_in_scope, Some(base_sha));
     let verdict = thresholds.evaluate_regression(&delta);
     Ok(PrReport {
         head: head_report,
