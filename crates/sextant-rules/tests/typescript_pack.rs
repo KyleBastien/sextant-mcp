@@ -129,4 +129,20 @@ ts_pack_tests! {
         ("a.ts", "const v = obj!.prop;\n", 1);
     no_non_null_assertion_does_not_fire_on_logical_not: "no-non-null-assertion.md" =>
         ("a.ts", "if (!ready) return;\nconst x = !flag;\n", 0);
+    no_empty_object_type_fires_on_type_alias: "no-empty-object-type.md" =>
+        ("a.ts", "type Bag = {};\n", 1);
+    no_empty_object_type_fires_on_param_annotation: "no-empty-object-type.md" =>
+        ("a.ts", "function f(opts: {}) {}\n", 1);
+    no_empty_object_type_does_not_fire_on_populated_type: "no-empty-object-type.md" =>
+        ("a.ts", "type Bag = { id: string };\n", 0);
+    no_empty_object_type_does_not_fire_on_empty_interface_decl: "no-empty-object-type.md" =>
+        ("a.ts", "interface Foo {}\n", 0);
+    no_branded_types_fires_on_intersection_brand: "no-branded-types.md" =>
+        ("a.ts",
+         "type UserId = string & { readonly __brand: unique symbol };\n",
+         1);
+    no_branded_types_fires_on_unique_symbol_const: "no-branded-types.md" =>
+        ("a.ts", "const FOO: unique symbol = Symbol(\"foo\");\n", 1);
+    no_branded_types_does_not_fire_on_plain_types: "no-branded-types.md" =>
+        ("a.ts", "type UserId = { kind: \"user\"; id: string };\n", 0);
 }

@@ -30,7 +30,10 @@ That's never the right answer:
 
 **Do this instead:** fix the underlying type error. If the type system
 is wrong about your code, the fix is to express the type more precisely
-(generics, type guards, branded types) — not to silence the compiler.
+(generics, type guards, tagged unions) — not to silence the compiler.
+Branded / `unique symbol` types are also banned (see
+`vendor.typescript.no-branded-types`), so use a tagged record or a
+class when you need nominal identity.
 
 **Cannot be disabled:** the lock-integrity check rejects edits to this
 file.

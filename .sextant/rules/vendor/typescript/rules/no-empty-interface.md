@@ -16,18 +16,19 @@ tags: [strict, types]
 
 # No empty interface
 
-`interface Foo {}` is the union of all object types — equivalent to
-`{}`, which itself is "anything except `null` and `undefined`." It's
-almost never what the author meant.
+`interface Foo {}` is equivalent to the bare `{}` type — "anything
+except `null` and `undefined`." It's almost never what the author
+meant. The companion `no-empty-object-type` rule catches the same
+shape outside of an `interface` declaration.
 
 **Do this instead:**
 
 - If you wanted a type alias for an external shape, use `type Foo = ...`
   with the real shape spelled out.
-- If you wanted a marker / brand, use the `unique symbol` pattern:
-  ```ts
-  type UserId = string & { readonly __brand: unique symbol };
-  ```
+- If you wanted to distinguish two structurally-identical values, give
+  them a tagged shape (`{ kind: "user"; id: string }`) or wrap them in
+  classes. Branded `unique symbol` types are also banned — see
+  `vendor.typescript.no-branded-types`.
 - If you intended to extend an existing type, do that:
   ```ts
   interface Admin extends User { readonly role: "admin" }

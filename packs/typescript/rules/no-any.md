@@ -29,11 +29,10 @@ impossible to refactor safely and silently propagating bugs into callers.
   type the input as `unknown` *only* inside a `catch (e: unknown)` clause —
   elsewhere, narrow with a type guard or a schema (zod, valibot) and assign
   the validated value to its real type.
-- For genuinely opaque values (a third-party callback, a brand), define a
-  named type:
-  ```ts
-  type Opaque = { readonly __brand: unique symbol };
-  ```
+- If you need the value to look distinct from a structurally-identical one,
+  give it a tagged shape (`{ kind: "user"; id: string }`) or wrap it in a
+  class. Branded `unique symbol` types are also banned — see
+  `vendor.typescript.no-branded-types`.
 
 **Cannot be disabled:** the lock-integrity check rejects edits to this
 file. If you find a case where the rule is wrong, the right fix is to

@@ -60,6 +60,8 @@ const BAD_TS: &str = "\
 const a: any = 1;
 const b: unknown = 2;
 const c: object = {};
+type Bag = {};
+type Brand = string & { readonly __brand: unique symbol };
 const d = e as string;
 const f = <number>g;
 const h = obj!.prop;
@@ -76,6 +78,8 @@ const REQUIRED_RULES: &[&str] = &[
     "vendor.typescript.no-any",
     "vendor.typescript.no-unknown",
     "vendor.typescript.no-object-type",
+    "vendor.typescript.no-empty-object-type",
+    "vendor.typescript.no-branded-types",
     "vendor.typescript.no-as-cast",
     "vendor.typescript.no-type-assertion",
     "vendor.typescript.no-non-null-assertion",

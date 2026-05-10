@@ -34,6 +34,8 @@ any new violation in a `--diff`/`--pr` grade fails the gate.
 | `vendor.typescript.no-any`              | `any` in any type position |
 | `vendor.typescript.no-unknown`          | `unknown` (allowed only in `catch (e: unknown)`) |
 | `vendor.typescript.no-object-type`      | lowercase `object` type |
+| `vendor.typescript.no-empty-object-type` | `{}` as a type (anywhere outside an `interface`) |
+| `vendor.typescript.no-branded-types`    | `unique symbol` types — i.e. branded / nominal types |
 | `vendor.typescript.no-as-cast`          | `x as Foo` (allows `as const`) |
 | `vendor.typescript.no-type-assertion`   | `<Foo>x` syntax (TS only) |
 | `vendor.typescript.no-non-null-assertion` | `x!` (use type narrowing) |
@@ -42,6 +44,7 @@ any new violation in a `--diff`/`--pr` grade fails the gate.
 | `vendor.typescript.no-function-type`    | `: Function` type |
 | `vendor.typescript.no-empty-interface`  | `interface Foo {}` (empty) |
 | `vendor.typescript.no-eval`             | `eval()` calls |
+| `vendor.typescript.prefer-inferred-types` | redundant primitive type annotations |
 
 ## Why these rules cannot be turned off
 

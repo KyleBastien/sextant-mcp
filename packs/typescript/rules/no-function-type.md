@@ -31,9 +31,11 @@ type Mapper<T, U> = (input: T) => U;
 type Listener = Function;
 ```
 
-If you genuinely don't care about the signature (rare — almost always
-the call site DOES care), `() => unknown` is a more honest "any
-zero-arg function returning something."
+If you genuinely don't care about the signature, you almost certainly
+do — figure out which arguments your code passes and what the return
+value is used for, and write that signature. `unknown` is also banned
+outside `catch` (see `vendor.typescript.no-unknown`), so reaching for
+`() => unknown` isn't an out either.
 
 **Cannot be disabled:** the lock-integrity check rejects edits to this
 file.
