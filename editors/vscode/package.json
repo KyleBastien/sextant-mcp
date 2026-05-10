@@ -1,7 +1,7 @@
 {
-  "name": "sextant",
+  "name": "sextant-mcp",
   "displayName": "Sextant",
-  "description": "Code-quality grader for AI-agent workflows. Live diagnostics + hover-to-explain in your editor.",
+  "description": "Live code-quality linter with inline diagnostics and hover-to-explain rule docs.",
   "version": "0.1.2",
   "publisher": "kylebastien",
   "license": "MIT",
@@ -14,10 +14,10 @@
   ],
   "keywords": [
     "lint",
-    "code review",
-    "sextant",
-    "ai",
-    "agent"
+    "linter",
+    "code quality",
+    "diagnostics",
+    "sextant"
   ],
   "repository": {
     "type": "git",

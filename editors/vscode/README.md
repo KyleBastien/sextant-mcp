@@ -13,7 +13,7 @@ The extension talks to a `sextant-lsp` binary. Install both:
 cargo install --git https://github.com/kylebastien/sextant-mcp sextant-lsp
 
 # 2. Install the extension
-code --install-extension kylebastien.sextant
+code --install-extension kylebastien.sextant-mcp
 ```
 
 Or build from source: clone the repo, run `cargo install --path
