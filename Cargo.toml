@@ -12,6 +12,10 @@ members = [
     "crates/sextant-mcp",
     "crates/sextant-lsp",
 ]
+# Drives `cargo build` / `--bin` resolution at the workspace root —
+# with the placeholder `[package]` below the workspace is non-virtual,
+# and these members are the ones that actually ship binaries.
+default-members = ["crates/sextant-cli", "crates/sextant-mcp"]
 exclude = ["docs", "editors"]
 
 [workspace.package]
@@ -19,6 +23,20 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/kylebastien/sextant-mcp"
 rust-version = "1.75"
+
+# Hybrid workspace+package: the root carries a placeholder `[package]`
+# block solely so release-please's rust strategy can find a manifest to
+# bump. `publish = false` keeps it off crates.io. Real functionality
+# lives in `crates/sextant-*`; the root's `src/lib.rs` is a one-line
+# doc comment.
+[package]
+name = "sextant"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Sextant workspace root; member crates ship the real functionality."
+publish = false
 
 [workspace.dependencies]
 sextant-core = { path = "crates/sextant-core", version = "0.1.0" }
