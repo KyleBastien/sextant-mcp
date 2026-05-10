@@ -56,7 +56,10 @@ fn descriptor_grade_diff() -> Value {
         "description": "Grade only the lines that changed since `base`. \
             Fast — call this in the inner edit loop after each modification \
             and self-correct before ending the turn. Returns a JSON Report \
-            with findings, severity counts, and a verdict.",
+            with findings, severity counts, and a verdict. Some findings \
+            include a `patch` field with a unified diff against the file at \
+            HEAD; prefer applying the proposed patch over re-deriving the \
+            fix from scratch.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -72,7 +75,9 @@ fn descriptor_grade_files() -> Value {
     json!({
         "name": "grade_files",
         "description": "Grade entire current contents of the given files (or the whole repo if `paths` is empty). \
-            Slower than grade_diff; use for thorough review.",
+            Slower than grade_diff; use for thorough review. Findings may include a \
+            `patch` field with a unified diff proposing the fix; apply it directly \
+            when present.",
         "inputSchema": {
             "type": "object",
             "properties": {

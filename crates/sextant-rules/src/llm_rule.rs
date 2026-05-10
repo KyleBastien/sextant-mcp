@@ -94,24 +94,33 @@ impl Evaluator for LlmRule {
             temperature: self.temperature,
         };
         match self.judge.judge_blocking(req) {
-            Ok(result) => result
-                .findings
-                .into_iter()
-                .map(|jf| {
-                    let mut f = Finding::new(
-                        &self.rule.id,
-                        translate_severity(jf.severity),
-                        rel.clone(),
-                        jf.message,
-                    );
-                    if let (Some(start), Some(end)) = (jf.line, jf.end_line) {
-                        f = f.spanning(start, end);
-                    } else if let Some(line) = jf.line {
-                        f = f.at_line(line);
-                    }
-                    f
-                })
-                .collect(),
+            Ok(result) => {
+                // If the judge returned a single whole-file patch and no
+                // per-finding patches, attach it to every produced finding
+                // so each one carries the same fix proposal.
+                let fallback_patch = result.patch.clone();
+                result
+                    .findings
+                    .into_iter()
+                    .map(|jf| {
+                        let mut f = Finding::new(
+                            &self.rule.id,
+                            translate_severity(jf.severity),
+                            rel.clone(),
+                            jf.message,
+                        );
+                        if let (Some(start), Some(end)) = (jf.line, jf.end_line) {
+                            f = f.spanning(start, end);
+                        } else if let Some(line) = jf.line {
+                            f = f.at_line(line);
+                        }
+                        if let Some(patch) = jf.patch.or_else(|| fallback_patch.clone()) {
+                            f = f.with_patch(patch);
+                        }
+                        f
+                    })
+                    .collect()
+            }
             Err(err) => {
                 tracing::warn!(rule=%self.rule.id, ?err, "judge call failed; degrading to info");
                 vec![Finding::new(
@@ -192,7 +201,9 @@ evaluator: {{ type: llm }}
                 message: "looks suspicious".into(),
                 line: Some(3),
                 end_line: Some(4),
+                patch: None,
             }],
+            patch: None,
         });
         let r = rule(judge);
         let file = SourceFile::new("a.rs", "line1\nline2\nline3\nline4\n");
@@ -207,7 +218,10 @@ evaluator: {{ type: llm }}
 
     #[test]
     fn skips_excluded_paths() {
-        let judge = judge_with(JudgeResult { findings: vec![] });
+        let judge = judge_with(JudgeResult {
+            findings: vec![],
+            patch: None,
+        });
         let r = rule(judge);
         let root = std::env::current_dir().unwrap();
         let file = SourceFile::new(root.join("skip").join("a.rs"), "fn x() {}\n");
@@ -217,13 +231,66 @@ evaluator: {{ type: llm }}
 
     #[test]
     fn renders_template_placeholders() {
-        let r = rule(judge_with(JudgeResult { findings: vec![] }));
+        let r = rule(judge_with(JudgeResult {
+            findings: vec![],
+            patch: None,
+        }));
         let file = SourceFile::new("a.rs", "hello world\n");
         let rendered = r.render(&file, std::path::Path::new("a.rs"));
         assert!(rendered.contains("hello world"));
         assert!(rendered.contains("a.rs"));
         assert!(rendered.contains("repo.llm.demo"));
         assert!(!rendered.contains("{{"));
+    }
+
+    #[test]
+    fn per_finding_patch_passes_through_to_finding() {
+        let judge = judge_with(JudgeResult {
+            findings: vec![JudgeFinding {
+                severity: JudgeSeverity::Warn,
+                message: "fix me".into(),
+                line: Some(1),
+                end_line: None,
+                patch: Some("--- a/a.rs\n+++ b/a.rs\n@@ -1,1 +1,1 @@\n-x\n+y\n".into()),
+            }],
+            patch: None,
+        });
+        let r = rule(judge);
+        let file = SourceFile::new("a.rs", "x\n");
+        let root = std::env::current_dir().unwrap();
+        let f = r.evaluate_file(&file, &EvalContext { repo_root: &root });
+        assert_eq!(f.len(), 1);
+        assert!(f[0].patch.as_deref().is_some_and(|p| p.contains("+y")));
+    }
+
+    #[test]
+    fn whole_result_patch_is_used_as_fallback_for_each_finding() {
+        let judge = judge_with(JudgeResult {
+            findings: vec![
+                JudgeFinding {
+                    severity: JudgeSeverity::Warn,
+                    message: "a".into(),
+                    line: None,
+                    end_line: None,
+                    patch: None,
+                },
+                JudgeFinding {
+                    severity: JudgeSeverity::Warn,
+                    message: "b".into(),
+                    line: None,
+                    end_line: None,
+                    patch: None,
+                },
+            ],
+            patch: Some("WHOLE PATCH".into()),
+        });
+        let r = rule(judge);
+        let file = SourceFile::new("a.rs", "x\n");
+        let root = std::env::current_dir().unwrap();
+        let f = r.evaluate_file(&file, &EvalContext { repo_root: &root });
+        assert_eq!(f.len(), 2);
+        assert_eq!(f[0].patch.as_deref(), Some("WHOLE PATCH"));
+        assert_eq!(f[1].patch.as_deref(), Some("WHOLE PATCH"));
     }
 
     #[test]

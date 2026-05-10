@@ -11,7 +11,7 @@ pub use markdown::markdown_pr;
 pub use review::review_json_pr;
 pub use sarif::sarif;
 
-use sextant_core::{BaselineDelta, Report, SeverityCounts, Verdict};
+use sextant_core::{BaselineDelta, Finding, Report, SeverityCounts, Verdict};
 use sextant_engine::PrReport;
 
 /// Marker comment embedded in every Sextant-authored PR review. The
@@ -19,27 +19,54 @@ use sextant_engine::PrReport;
 /// update instead of stacking duplicates.
 pub(crate) const REVIEW_MARKER: &str = "<!-- sextant:review -->";
 
-pub fn human(report: &Report) -> String {
+/// Human formatter with optional patch rendering. When `show_patches` is
+/// true, every finding that carries a `patch` is followed by an indented
+/// diff block; when false, the patched lines get a `(patch available, --show-patches)`
+/// hint instead so the report stays scannable by default.
+pub fn human_with(report: &Report, show_patches: bool) -> String {
     let mut out = String::new();
     if report.findings.is_empty() {
         out.push_str("No findings.\n");
     } else {
         for f in &report.findings {
-            let line = f.line.map(|l| format!(":{l}")).unwrap_or_default();
-            out.push_str(&format!(
-                "{:<5} {}{}\t{}\t{}\n",
-                f.severity.as_str(),
-                f.path.display(),
-                line,
-                f.rule_id,
-                f.message
-            ));
+            render_finding(&mut out, f, show_patches);
         }
     }
     out.push('\n');
     out.push_str(&report.summary);
     out.push('\n');
     out
+}
+
+fn render_finding(out: &mut String, f: &Finding, show_patches: bool) {
+    let line = f.line.map(|l| format!(":{l}")).unwrap_or_default();
+    out.push_str(&format!(
+        "{:<5} {}{}\t{}\t{}\n",
+        f.severity.as_str(),
+        f.path.display(),
+        line,
+        f.rule_id,
+        f.message
+    ));
+    render_patch(out, f.patch.as_deref(), show_patches);
+}
+
+fn render_patch(out: &mut String, patch: Option<&str>, show_patches: bool) {
+    match (patch, show_patches) {
+        (Some(diff), true) => indent_diff(out, diff),
+        (Some(_), false) => {
+            out.push_str("      (patch available, pass --show-patches to render)\n");
+        }
+        (None, _) => {}
+    }
+}
+
+fn indent_diff(out: &mut String, diff: &str) {
+    for diff_line in diff.lines() {
+        out.push_str("    ");
+        out.push_str(diff_line);
+        out.push('\n');
+    }
 }
 
 pub fn json(report: &Report) -> Result<String, serde_json::Error> {
@@ -105,11 +132,25 @@ mod tests {
     fn human_render_lists_findings_with_summary() {
         let f = Finding::new("r.x", Severity::Warn, "src/a.rs", "boom").at_line(2);
         let r = Report::build(vec![f], Verdict::Approve);
-        let s = human(&r);
+        let s = human_with(&r, false);
         assert!(s.contains("warn"));
         assert!(s.contains("src/a.rs:2"));
         assert!(s.contains("r.x"));
         assert!(s.contains("APPROVE"));
+    }
+
+    #[test]
+    fn human_with_patches_renders_indented_diff_block() {
+        let f = Finding::new("r.x", Severity::Warn, "src/a.rs", "boom")
+            .at_line(2)
+            .with_patch("--- a/src/a.rs\n+++ b/src/a.rs\n@@ -2,1 +2,1 @@\n-old\n+new\n");
+        let r = Report::build(vec![f], Verdict::Approve);
+        let on = human_with(&r, true);
+        assert!(on.contains("    --- a/src/a.rs"));
+        assert!(on.contains("    +new"));
+        let off = human_with(&r, false);
+        assert!(off.contains("(patch available"));
+        assert!(!off.contains("    +new"));
     }
 
     #[test]

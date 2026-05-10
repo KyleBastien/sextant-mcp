@@ -42,11 +42,20 @@ pub struct JudgeFinding {
     pub line: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end_line: Option<u32>,
+    /// Optional unified-diff patch proposed for this finding. Populated by
+    /// LLM rules and the synthesis pass; ignored by other call sites.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct JudgeResult {
     pub findings: Vec<JudgeFinding>,
+    /// Optional whole-result patch. When present, applies on top of (or in
+    /// addition to) any per-finding patches. Used by the synthesis pass
+    /// when the model prefers to return a single combined diff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
 }
 
 /// One unit of work for a provider. The rule layer renders the prompt
@@ -112,12 +121,28 @@ impl Judge {
     /// call — a transient disk hiccup shouldn't sink a grade.
     pub fn judge_blocking(&self, req: JudgeRequest<'_>) -> Result<JudgeResult, JudgeError> {
         let key = Cache::key(self.provider.name(), req.model, req.user_prompt);
-        if let Some(hit) = self.cache.get(&key)? {
+        self.run_with_key(req, &key)
+    }
+
+    /// Same shape as `judge_blocking` but uses a synthesis-namespaced
+    /// cache key so patch-synthesis results can never be served from a
+    /// grading-pass cache slot (or vice versa) even when the prompt
+    /// happens to match.
+    pub fn judge_blocking_synthesis(
+        &self,
+        req: JudgeRequest<'_>,
+    ) -> Result<JudgeResult, JudgeError> {
+        let key = Cache::key_for_synthesis(self.provider.name(), req.model, req.user_prompt);
+        self.run_with_key(req, &key)
+    }
+
+    fn run_with_key(&self, req: JudgeRequest<'_>, key: &str) -> Result<JudgeResult, JudgeError> {
+        if let Some(hit) = self.cache.get(key)? {
             tracing::debug!(provider = self.provider.name(), %key, "judge cache hit");
             return Ok(hit);
         }
         let res = self.runtime.block_on(self.provider.judge(req))?;
-        if let Err(err) = self.cache.put(&key, &res) {
+        if let Err(err) = self.cache.put(key, &res) {
             tracing::warn!(?err, "judge cache write failed");
         }
         Ok(res)
@@ -145,41 +170,74 @@ mod tests {
                 message: msg.into(),
                 line: None,
                 end_line: None,
+                patch: None,
             }],
+            patch: None,
         }
     }
 
     #[test]
     fn provider_name_forwards_to_inner_provider() {
         let dir = tempfile::tempdir().unwrap();
-        let provider = Arc::new(FakeJudge::always("fake", JudgeResult { findings: vec![] }));
+        let provider = Arc::new(FakeJudge::always(
+            "fake",
+            JudgeResult {
+                findings: vec![],
+                patch: None,
+            },
+        ));
         let judge = Judge::new(provider, dir.path().to_path_buf()).unwrap();
         assert_eq!(judge.provider_name(), "fake");
     }
 
-    #[test]
-    fn judge_blocking_caches_results() {
-        let dir = tempfile::tempdir().unwrap();
-        // Two responses available; if the cache works we should only
-        // ever pull the first.
-        let provider = Arc::new(FakeJudge::new(
-            "fake",
-            vec![result_with("first"), result_with("second")],
-        ));
+    /// Spin a judge wired to a `FakeJudge` that returns each entry of
+    /// `messages` once (each as a single-finding `JudgeResult`). The
+    /// returned `Arc<FakeJudge>` is a clone of the provider so callers
+    /// can inspect `.received()` to distinguish cache hits from live
+    /// calls.
+    fn judge_with_messages(dir: &tempfile::TempDir, messages: &[&str]) -> (Judge, Arc<FakeJudge>) {
+        let responses: Vec<JudgeResult> = messages.iter().map(|m| result_with(m)).collect();
+        let provider = Arc::new(FakeJudge::new("fake", responses));
         let captured = Arc::clone(&provider);
         let judge = Judge::new(provider, dir.path().to_path_buf()).unwrap();
+        (judge, captured)
+    }
 
-        let a = judge.judge_blocking(req("hello")).unwrap();
-        assert_eq!(a.findings[0].message, "first");
-        let b = judge.judge_blocking(req("hello")).unwrap();
-        assert_eq!(b.findings[0].message, "first", "expected cache hit");
+    fn first_msg(r: &JudgeResult) -> &str {
+        r.findings[0].message.as_str()
+    }
+
+    #[test]
+    fn judge_blocking_synthesis_uses_separate_cache_slot() {
+        // Same prompt, different namespace: a synthesis call must not
+        // be served the grading-pass cache entry, and vice versa.
+        let dir = tempfile::tempdir().unwrap();
+        let (judge, captured) = judge_with_messages(&dir, &["grade", "synth"]);
+
+        assert_eq!(first_msg(&judge.judge_blocking(req("p")).unwrap()), "grade");
+        assert_eq!(
+            first_msg(&judge.judge_blocking_synthesis(req("p")).unwrap()),
+            "synth"
+        );
         assert_eq!(
             captured.received().len(),
-            1,
-            "second call should be served from cache"
+            2,
+            "namespace collision: synthesis served from grade cache"
         );
 
-        let c = judge.judge_blocking(req("different")).unwrap();
-        assert_eq!(c.findings[0].message, "second");
+        // Both calls should now hit the cache on a repeat.
+        let _ = judge.judge_blocking(req("p")).unwrap();
+        let _ = judge.judge_blocking_synthesis(req("p")).unwrap();
+        assert_eq!(
+            captured.received().len(),
+            2,
+            "expected cache hits on repeat"
+        );
     }
+
+    // The basic-caching test was folded into
+    // `judge_blocking_synthesis_uses_separate_cache_slot`: that test's
+    // "Both calls should now hit the cache on a repeat" assertion
+    // already exercises the cache-hit path for `judge_blocking`,
+    // so a separate caching-only test was redundant.
 }

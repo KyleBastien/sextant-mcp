@@ -16,7 +16,7 @@ pub fn sarif(report: &Report) -> Result<String, serde_json::Error> {
         .findings
         .iter()
         .map(|f| {
-            json!({
+            let mut result = json!({
                 "ruleId": f.rule_id,
                 "level": sarif_level(f.severity),
                 "message": { "text": f.message },
@@ -26,7 +26,28 @@ pub fn sarif(report: &Report) -> Result<String, serde_json::Error> {
                         "region": region(f),
                     }
                 }]
-            })
+            });
+            if let Some(patch) = &f.patch {
+                result.as_object_mut().unwrap().insert(
+                    "fixes".into(),
+                    json!([{
+                        "description": { "text": "Sextant proposed patch" },
+                        "artifactChanges": [{
+                            "artifactLocation": { "uri": f.path.to_string_lossy() },
+                            // SARIF wants per-replacement edits; we don't
+                            // carry those, so embed the unified diff as a
+                            // single replacement description. Tools that
+                            // ingest SARIF and apply fixes will fall back
+                            // to displaying the diff.
+                            "replacements": [{
+                                "deletedRegion": region(f),
+                                "insertedContent": { "text": patch.clone() }
+                            }]
+                        }]
+                    }]),
+                );
+            }
+            result
         })
         .collect();
     let doc = json!({
@@ -91,6 +112,25 @@ mod tests {
         assert_eq!(results[0]["level"], "error");
         let rules = v["runs"][0]["tool"]["driver"]["rules"].as_array().unwrap();
         assert_eq!(rules.len(), 2);
+    }
+
+    #[test]
+    fn sarif_emits_fixes_when_finding_has_patch() {
+        let f = Finding::new("r.a", Severity::Warn, "src/a.rs", "boom")
+            .at_line(2)
+            .with_patch("--- a/src/a.rs\n+++ b/src/a.rs\n@@ -2,1 +2,1 @@\n-x\n+y\n");
+        let r = Report::build(vec![f], Verdict::Approve);
+        let s = sarif(&r).unwrap();
+        let v: Value = serde_json::from_str(&s).unwrap();
+        let fixes = &v["runs"][0]["results"][0]["fixes"];
+        assert!(fixes.is_array(), "missing fixes array");
+        assert_eq!(
+            fixes[0]["artifactChanges"][0]["artifactLocation"]["uri"],
+            "src/a.rs"
+        );
+        let inserted =
+            &fixes[0]["artifactChanges"][0]["replacements"][0]["insertedContent"]["text"];
+        assert!(inserted.as_str().unwrap().contains("+y"));
     }
 
     #[test]

@@ -56,6 +56,20 @@ fn findings_table(findings: &[Finding]) -> String {
             escape_pipe(&f.message),
         ));
     }
+    let any_patches = findings.iter().any(|f| f.patch.is_some());
+    if any_patches {
+        s.push_str("\n### Proposed fixes\n\n");
+        for f in findings {
+            let Some(patch) = &f.patch else { continue };
+            s.push_str(&format!(
+                "<details><summary>{} <code>{}</code> at <code>{}</code></summary>\n\n```diff\n{}\n```\n\n</details>\n\n",
+                f.severity.as_str(),
+                f.rule_id,
+                location(f),
+                patch.trim_end(),
+            ));
+        }
+    }
     s
 }
 
@@ -130,6 +144,17 @@ mod tests {
         assert!(md.contains("r.old"));
         assert!(md.contains("Baseline: `abcdef123456`"));
         assert!(md.contains(REVIEW_MARKER));
+    }
+
+    #[test]
+    fn markdown_pr_renders_proposed_fix_diff_blocks() {
+        let mut f = finding("r.fix", Severity::Warn, "src/a.rs", Some(2), "boom");
+        f = f.with_patch("--- a/src/a.rs\n+++ b/src/a.rs\n@@ -2,1 +2,1 @@\n-x\n+y\n");
+        let pr = pr_report(vec![f], vec![], Verdict::Approve);
+        let md = markdown_pr(&pr);
+        assert!(md.contains("Proposed fixes"));
+        assert!(md.contains("```diff"));
+        assert!(md.contains("+y"));
     }
 
     #[test]

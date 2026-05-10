@@ -30,13 +30,32 @@ pub struct Cache {
     dir: PathBuf,
 }
 
+/// Cache key schema version. Bump when the wire shape of `JudgeResult`
+/// changes so stale entries quietly miss instead of decoding as the wrong
+/// shape. Bumped to 2 when the patch fields landed.
+const SCHEMA_VERSION: u8 = 2;
+
 impl Cache {
     pub fn new(dir: PathBuf) -> Self {
         Self { dir }
     }
 
     pub fn key(provider: &str, model: &str, prompt: &str) -> String {
+        Self::namespaced_key("judge", provider, model, prompt)
+    }
+
+    /// Cache key for the LLM-synthesis pass. Namespacing keeps grading
+    /// results and synthesized patches in disjoint slots even if a future
+    /// caller passes an identical prompt.
+    pub fn key_for_synthesis(provider: &str, model: &str, prompt: &str) -> String {
+        Self::namespaced_key("synth", provider, model, prompt)
+    }
+
+    fn namespaced_key(namespace: &str, provider: &str, model: &str, prompt: &str) -> String {
         let mut h = blake3::Hasher::new();
+        h.update(&[SCHEMA_VERSION]);
+        h.update(namespace.as_bytes());
+        h.update(b"\0");
         h.update(provider.as_bytes());
         h.update(b"\0");
         h.update(model.as_bytes());
@@ -95,7 +114,9 @@ mod tests {
                 message: "x".into(),
                 line: Some(1),
                 end_line: None,
+                patch: None,
             }],
+            patch: None,
         }
     }
 
@@ -108,6 +129,15 @@ mod tests {
         assert_ne!(a, b);
         assert_ne!(a, c);
         assert_ne!(a, d);
+    }
+
+    #[test]
+    fn synthesis_key_does_not_collide_with_grading_key() {
+        // Same provider/model/prompt should land in different slots so
+        // the two passes can't read each other's cached entries.
+        let g = Cache::key("anthropic", "m", "same");
+        let s = Cache::key_for_synthesis("anthropic", "m", "same");
+        assert_ne!(g, s);
     }
 
     #[test]

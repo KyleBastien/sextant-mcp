@@ -71,11 +71,16 @@ pub enum EvaluatorSpec {
     /// Dispatches to a Rust evaluator by registry name.
     Builtin { name: String },
     /// A line-by-line regex match. `exclude_paths` are GlobSet patterns
-    /// applied before evaluation.
+    /// applied before evaluation. `replacement`, when set, drives a
+    /// proposed-fix unified diff: each match's text is rewritten via the
+    /// regex crate's replace syntax (`$1`, named captures, etc.) and the
+    /// resulting line replaces the original.
     Regex {
         pattern: String,
         #[serde(default)]
         exclude_paths: Vec<String>,
+        #[serde(default)]
+        replacement: Option<String>,
     },
     /// LLM-evaluated rule. The markdown body is the prompt template;
     /// `{{path}}`, `{{code}}`, and `{{rule.id}}` are substituted at

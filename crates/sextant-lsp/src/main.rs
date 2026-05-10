@@ -5,6 +5,7 @@
 //! popovers. Stdout is reserved for protocol traffic; logs go to stderr.
 
 mod backend;
+mod codeaction;
 mod convert;
 mod grade;
 mod hover;

@@ -35,10 +35,18 @@ fn tool_schema() -> Value {
                         },
                         "message": { "type": "string" },
                         "line": { "type": ["integer", "null"] },
-                        "end_line": { "type": ["integer", "null"] }
+                        "end_line": { "type": ["integer", "null"] },
+                        "patch": {
+                            "type": ["string", "null"],
+                            "description": "Optional unified diff against the file proposing a fix. Omit when no concrete fix can be expressed mechanically."
+                        }
                     },
                     "required": ["severity", "message"]
                 }
+            },
+            "patch": {
+                "type": ["string", "null"],
+                "description": "Optional whole-file unified diff used when a single combined fix is more natural than per-finding patches."
             }
         },
         "required": ["findings"]

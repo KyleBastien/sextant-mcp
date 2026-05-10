@@ -14,6 +14,7 @@ use sextant_lang::{parse, test_haystack_mentions, test_witness, Language};
 
 use crate::file_length::rule_from_parsed;
 use crate::loader::ParsedRule;
+use crate::patch::append_diff;
 
 pub struct PubFnUntestedRule {
     rule: Rule,
@@ -60,12 +61,31 @@ impl Evaluator for PubFnUntestedRule {
                 continue;
             }
             let msg = message_for(lang, &pf.name);
-            out.push(
-                Finding::new(&self.rule.id, self.rule.severity, path.clone(), msg)
-                    .spanning(pf.start_line, pf.end_line),
-            );
+            let mut finding = Finding::new(&self.rule.id, self.rule.severity, path.clone(), msg)
+                .spanning(pf.start_line, pf.end_line);
+            if let Some(stub) = stub_test_block(lang, &pf.name) {
+                finding = finding.with_patch(append_diff(&path, &file.contents, &stub));
+            }
+            out.push(finding);
         }
         out
+    }
+}
+
+/// Skeleton test block to append at the end of a file. Kept minimal — the
+/// generated test compiles and runs, but `todo!()` (or its equivalent)
+/// forces the author to fill in real coverage rather than rubber-stamp
+/// the rule. Returns `None` for languages where the stub would be more
+/// disruptive than helpful.
+fn stub_test_block(lang: Language, name: &str) -> Option<String> {
+    match lang {
+        Language::Rust => Some(format!(
+            "\n#[cfg(test)]\nmod {name}_tests {{\n    use super::*;\n\n    #[test]\n    fn {name}_smoke() {{\n        // TODO: exercise `{name}` and assert its behaviour.\n        let _ = {name};\n    }}\n}}\n"
+        )),
+        Language::JavaScript | Language::TypeScript | Language::Tsx => Some(format!(
+            "\nif (import.meta.vitest) {{\n    const {{ describe, it, expect }} = import.meta.vitest;\n    describe('{name}', () => {{\n        it('is exercised', () => {{\n            // TODO: exercise `{name}` and assert its behaviour.\n            expect({name}).toBeDefined();\n        }});\n    }});\n}}\n"
+        )),
+        _ => None,
     }
 }
 
@@ -121,6 +141,23 @@ evaluator: { type: builtin, name: pub_fn_untested }
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].severity, Severity::Info);
         assert!(f[0].message.contains("lonely"));
+    }
+
+    #[test]
+    fn rust_finding_carries_stub_test_patch() {
+        let f = evaluate("a.rs", "pub fn lonely() {}\n");
+        let patch = f[0].patch.as_deref().expect("expected stub patch");
+        assert!(patch.contains("--- a/a.rs"));
+        assert!(patch.contains("mod lonely_tests"));
+        assert!(patch.contains("#[test]"));
+    }
+
+    #[test]
+    fn js_finding_carries_vitest_stub_patch() {
+        let f = evaluate("a.ts", "export function lonely() {}\n");
+        let patch = f[0].patch.as_deref().expect("expected stub patch");
+        assert!(patch.contains("import.meta.vitest"));
+        assert!(patch.contains("describe('lonely'"));
     }
 
     #[test]
