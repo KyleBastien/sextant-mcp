@@ -9,6 +9,12 @@
     ".": {
       "package-name": "sextant",
       "release-type": "rust"
+    },
+    "editors/vscode": {
+      "package-name": "sextant-vscode",
+      "release-type": "node",
+      "component": "vscode",
+      "include-component-in-tag": true
     }
   }
 }
