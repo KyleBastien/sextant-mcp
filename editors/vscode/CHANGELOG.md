@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/KyleBastien/sextant-mcp/compare/vscode-v0.1.0...vscode-v0.1.1) (2026-05-10)
+
+
+### Features
+
+* add sextant-lsp crate and VS Code extension for in-editor grading ([#8](https://github.com/KyleBastien/sextant-mcp/issues/8)) ([2a8a3e0](https://github.com/KyleBastien/sextant-mcp/commit/2a8a3e0e5e1815ec48680cdf7cf6a968ddb377c3))
+
 ## 0.1.0
 
 - Initial release.
