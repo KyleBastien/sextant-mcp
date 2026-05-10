@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.4...v0.1.5) (2026-05-10)
+
+
+### Features
+
+* propose-only autofix patches across all rule types ([#19](https://github.com/KyleBastien/sextant-mcp/issues/19)) ([9a66e71](https://github.com/KyleBastien/sextant-mcp/commit/9a66e71bb7f79e49ef12785213d8d6626a3c89e1))
+
 ## [0.1.4](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.3...v0.1.4) (2026-05-10)
 
 
