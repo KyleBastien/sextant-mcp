@@ -24,8 +24,22 @@ const DOCUMENT_SELECTORS = [
 
 let client: LanguageClient | undefined;
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const serverPath = locateServer();
+// Narrow context type capturing only what `activate` actually uses.
+// VS Code at runtime always passes the full ExtensionContext (which
+// satisfies this shape structurally), and tests can construct a value
+// inline without `as`-casting through `unknown`.
+type ActivateContext = Pick<vscode.ExtensionContext, "subscriptions">;
+
+export async function activate(context: ActivateContext): Promise<void> {
+  return activateWith(context, locateServer());
+}
+
+// Internal entry point with the binary lookup factored out so tests
+// can drive the missing-binary path without mocking vscode.workspace.
+async function activateWith(
+  context: ActivateContext,
+  serverPath: string | undefined,
+): Promise<void> {
   if (!serverPath) {
     vscode.window.showErrorMessage(
       "Sextant: could not find the sextant-lsp binary. Install with " +
@@ -111,11 +125,8 @@ if (typeof describe === "function") {
     });
 
     it("activate surfaces an error and bails when the binary is missing", async () => {
-      vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
-        get: () => null,
-      } as never);
-      const ctx = { subscriptions: [] } as unknown as vscode.ExtensionContext;
-      await activate(ctx);
+      const ctx = { subscriptions: [] };
+      await activateWith(ctx, undefined);
       expect(vscode.window.showErrorMessage).toHaveBeenCalledOnce();
       expect(ctx.subscriptions).toHaveLength(0);
     });

@@ -67,13 +67,21 @@ pub fn grade_pr(
         repo_root,
         exclude: &exclude,
     };
-    let head_report = build_head_report(&env, &diff, &thresholds)?;
+    let head_diff = compute_diff(env.repo_root, &diff)?;
+    let head_report = build_head_report(&env, &head_diff, &thresholds);
     let (baseline_report, base_sha) =
         build_baseline_report(&env, diff.base.as_deref(), opts.baseline_cache.as_deref())?;
 
+    // Scope the baseline to paths the PR actually touched. The baseline
+    // is a whole-tree grade; without this filter, baseline findings on
+    // unchanged files appear as "fixed" (because head is diff-only and
+    // never sees those paths) — see the regression test below. With the
+    // filter, the delta reflects only what the PR can plausibly affect.
+    let baseline_in_scope = scope_baseline_to_diff(&baseline_report.findings, &head_diff);
+
     let delta = BaselineDelta::compute(
         &head_report.findings,
-        &baseline_report.findings,
+        &baseline_in_scope,
         Some(base_sha),
     );
     let verdict = thresholds.evaluate_regression(&delta);
@@ -83,6 +91,19 @@ pub fn grade_pr(
         delta,
         verdict,
     })
+}
+
+/// Drop baseline findings on paths the PR did not touch. The PR's delta
+/// only counts what the PR could plausibly have introduced or fixed —
+/// pre-existing debt in unchanged files is out of scope on both sides.
+fn scope_baseline_to_diff(findings: &[Finding], diff: &sextant_diff::DiffSet) -> Vec<Finding> {
+    let touched: std::collections::HashSet<&Path> =
+        diff.files.iter().map(|f| f.path.as_path()).collect();
+    findings
+        .iter()
+        .filter(|f| touched.contains(f.path.as_path()))
+        .cloned()
+        .collect()
 }
 
 /// Bundle of references threaded through the PR-mode helpers — the
@@ -97,12 +118,11 @@ struct GradeEnv<'a> {
 
 fn build_head_report(
     env: &GradeEnv<'_>,
-    diff: &DiffOptions,
+    head_diff: &sextant_diff::DiffSet,
     thresholds: &VerdictThresholds,
-) -> Result<Report, EngineError> {
-    let head_diff = compute_diff(env.repo_root, diff)?;
-    let findings = grade_head(env, &head_diff);
-    Ok(Report::build(findings, thresholds.evaluate(&[])))
+) -> Report {
+    let findings = grade_head(env, head_diff);
+    Report::build(findings, thresholds.evaluate(&[]))
 }
 
 fn build_baseline_report(

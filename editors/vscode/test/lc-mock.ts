@@ -13,8 +13,29 @@ export class LanguageClient {
   readonly dispose = vi.fn(() => {});
 }
 
-export type ServerOptions = unknown;
-export type LanguageClientOptions = unknown;
+// Structural shapes matching how `extension.ts` populates these
+// values. We don't need full fidelity with the real types from
+// `vscode-languageclient` — the runtime here is the mock above.
+export interface ServerOptions {
+  readonly command: string;
+  readonly args?: readonly string[];
+  readonly transport?: number;
+}
+
+export interface DocumentFilter {
+  readonly scheme: string;
+  readonly language: string;
+}
+
+export interface LanguageClientOptions {
+  readonly documentSelector?: readonly DocumentFilter[];
+  readonly initializationOptions?: Readonly<Record<string, boolean>>;
+  readonly synchronize?: {
+    readonly fileEvents?: { dispose(): void };
+    readonly configurationSection?: string;
+  };
+  readonly outputChannelName?: string;
+}
 
 if (typeof describe === "function") {
   describe("LanguageClient mock", () => {
