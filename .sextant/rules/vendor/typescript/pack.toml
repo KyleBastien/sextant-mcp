@@ -1,0 +1,6 @@
+name = "typescript"
+version = "0.1.0"
+description = "Strict TypeScript rules for AI agents: ban any/unknown/object/casts and other footguns."
+homepage = "https://github.com/kylebastien/sextant-mcp"
+license = "MIT"
+sextant = ">=0.1.0"

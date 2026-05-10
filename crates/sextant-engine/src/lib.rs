@@ -280,7 +280,7 @@ pub fn list_rules(repo_root: &Path) -> Result<Vec<RuleSummary>, EngineError> {
                 category: r.category.clone(),
                 scope: r.scope,
                 languages: r.languages.clone(),
-                source: r.source,
+                source: r.source.clone(),
                 tags: r.tags.clone(),
             }
         })

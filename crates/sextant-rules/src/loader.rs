@@ -10,7 +10,6 @@
 //! Repo-local rules win over built-ins when ids collide. `overrides: [...]`
 //! disables the listed ids regardless of order.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use gray_matter::engine::YAML;
@@ -18,6 +17,8 @@ use gray_matter::Matter;
 use serde::Deserialize;
 use sextant_core::{Category, RuleSource, Scope, Severity};
 use thiserror::Error;
+
+use crate::lock::{self, LockError, LockedPack};
 
 #[derive(Debug, Error)]
 pub enum LoaderError {
@@ -31,6 +32,13 @@ pub enum LoaderError {
     Frontmatter { path: PathBuf, message: String },
     #[error("walk: {0}")]
     Walk(#[from] ignore::Error),
+    #[error(transparent)]
+    Lock(#[from] LockError),
+    #[error(
+        "rule `{id}` in repo-local `.sextant/rules/` shadows vendor pack `{pack}` rule of \
+         the same id; vendor pack rules are immutable — rename your repo rule"
+    )]
+    ShadowsVendor { id: String, pack: String },
 }
 
 pub type LoaderResult<T> = Result<T, LoaderError>;
@@ -82,6 +90,21 @@ pub enum EvaluatorSpec {
         max_tokens: Option<u32>,
         #[serde(default)]
         temperature: Option<f32>,
+        #[serde(default)]
+        exclude_paths: Vec<String>,
+    },
+    /// Tree-sitter-query rule. The query is compiled per language listed in
+    /// `languages:`; matches anchored on `capture` (or the first capture)
+    /// produce findings. `not_under` drops a match if any ancestor's node
+    /// kind is in the list — used for context-sensitive exemptions.
+    Ast {
+        query: String,
+        #[serde(default)]
+        capture: Option<String>,
+        #[serde(default)]
+        message: Option<String>,
+        #[serde(default)]
+        not_under: Vec<String>,
         #[serde(default)]
         exclude_paths: Vec<String>,
     },
@@ -180,14 +203,66 @@ pub fn builtin_rules() -> LoaderResult<Vec<ParsedRule>> {
 }
 
 /// Discover repo-local rules under `<root>/.sextant/rules/**/*.md`. Missing
-/// directories are not an error — they're just an empty list.
+/// directories are not an error — they're just an empty list. The
+/// `vendor/` subdirectory is reserved for vendor packs (loaded via
+/// [`vendor_rules`]) and skipped here.
 pub fn repo_rules(root: &Path) -> LoaderResult<Vec<ParsedRule>> {
     let dir = root.join(".sextant").join("rules");
     if !dir.exists() {
         return Ok(Vec::new());
     }
+    let vendor_root = dir.join(lock::VENDOR_DIR);
     let mut out = Vec::new();
     for dent in ignore::WalkBuilder::new(&dir)
+        .standard_filters(true)
+        .build()
+    {
+        let dent = dent?;
+        if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            continue;
+        }
+        let path = dent.into_path();
+        if path.starts_with(&vendor_root) {
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).map_err(|source| LoaderError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        out.push(parse_rule_md(&text, RuleSource::Repo, Some(path))?);
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
+}
+
+/// Discover vendor-pack rules under `<root>/.sextant/rules/vendor/<pack>/`,
+/// gated by `.sextant/rules.lock`. Every file in the pack directory must
+/// match the locked SHA-256 hash; tampering is a hard error. Returns an
+/// empty list when the lock is absent (no packs installed).
+pub fn vendor_rules(root: &Path) -> LoaderResult<Vec<ParsedRule>> {
+    let Some(lock) = lock::LockFile::read(root)? else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for pack in &lock.packs {
+        out.extend(load_pack(root, pack)?);
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
+}
+
+fn load_pack(root: &Path, pack: &LockedPack) -> LoaderResult<Vec<ParsedRule>> {
+    let dir = lock::pack_dir(root, &pack.name);
+    lock::verify_pack(pack, &dir)?;
+    let rules_dir = dir.join("rules");
+    if !rules_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for dent in ignore::WalkBuilder::new(&rules_dir)
         .standard_filters(true)
         .build()
     {
@@ -203,38 +278,16 @@ pub fn repo_rules(root: &Path) -> LoaderResult<Vec<ParsedRule>> {
             path: path.clone(),
             source,
         })?;
-        out.push(parse_rule_md(&text, RuleSource::Repo, Some(path))?);
+        out.push(parse_rule_md(
+            &text,
+            RuleSource::Vendor(pack.name.clone()),
+            Some(path),
+        )?);
     }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
-/// Merge built-in and repo rules. Repo rules with a colliding id replace
-/// the built-in (logged once). `overrides: [...]` from any rule disables
-/// the listed ids. Disabled rules are dropped.
-pub fn merge(builtins: Vec<ParsedRule>, repo: Vec<ParsedRule>) -> Vec<ParsedRule> {
-    let mut by_id: HashMap<String, ParsedRule> = HashMap::new();
-    for r in builtins {
-        by_id.insert(r.id.clone(), r);
-    }
-    let mut overrides = std::collections::HashSet::new();
-    for r in &repo {
-        overrides.extend(r.overrides.iter().cloned());
-    }
-    for r in repo {
-        if by_id.contains_key(&r.id) {
-            tracing::info!(rule = %r.id, "repo-local rule replaces built-in");
-        }
-        overrides.extend(r.overrides.iter().cloned());
-        by_id.insert(r.id.clone(), r);
-    }
-    let mut out: Vec<ParsedRule> = by_id
-        .into_values()
-        .filter(|r| r.enabled && !overrides.contains(&r.id))
-        .collect();
-    out.sort_by(|a, b| a.id.cmp(&b.id));
-    out
-}
+pub use crate::merge::{merge, merge_all};
 
 #[cfg(test)]
 #[path = "loader_tests.rs"]
@@ -253,12 +306,14 @@ mod smoke {
         let _ = builtin_rules().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let _ = repo_rules(dir.path()).unwrap();
+        let _ = vendor_rules(dir.path()).unwrap();
         let r = parse_rule_md(
             "---\nid: t\nname: t\ndescription: x\nseverity: warn\ncategory: style\nevaluator: { type: regex, pattern: x }\n---\n",
             RuleSource::Repo,
             None,
         )
         .unwrap();
-        assert!(merge(vec![], vec![r]).len() <= 1);
+        assert!(merge(vec![], vec![r.clone()]).len() <= 1);
+        assert!(merge_all(vec![], vec![], vec![r]).unwrap().len() <= 1);
     }
 }
