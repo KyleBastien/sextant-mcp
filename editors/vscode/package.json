@@ -1,0 +1,92 @@
+{
+  "name": "sextant",
+  "displayName": "Sextant",
+  "description": "Code-quality grader for AI-agent workflows. Live diagnostics + hover-to-explain in your editor.",
+  "version": "0.1.0",
+  "publisher": "kylebastien",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "lint",
+    "code review",
+    "sextant",
+    "ai",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kylebastien/sextant-mcp.git",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/kylebastien/sextant-mcp/issues"
+  },
+  "homepage": "https://kylebastien.github.io/sextant-mcp/editor/vscode/",
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:rust",
+    "onLanguage:python",
+    "onLanguage:go",
+    "onLanguage:java",
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact",
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact"
+  ],
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "Sextant",
+      "properties": {
+        "sextant.serverPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Path to the sextant-lsp binary. When null, the extension looks up `sextant-lsp` on PATH."
+        },
+        "sextant.disableLlm": {
+          "type": "boolean",
+          "default": true,
+          "description": "Skip LLM-judged rules in the editor. Off by default to keep grades fast and avoid surprise API spend; turn off to grade LLM rules in-editor too."
+        },
+        "sextant.trace.server": {
+          "type": "string",
+          "scope": "window",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace LSP traffic between VS Code and sextant-lsp."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -p . -w",
+    "package": "vsce package",
+    "publish": "vsce publish",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.1.0"
+  }
+}

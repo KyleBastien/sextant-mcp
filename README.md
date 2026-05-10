@@ -53,7 +53,7 @@ If you're hand-reviewing every agent diff for the same handful of
 issues, or watching CI flag the same things over and over, Sextant
 is the loop you're missing.
 
-## One engine, four surfaces
+## One engine, five surfaces
 
 - **MCP server** — agents call `grade_diff` after each edit and
   self-correct before finishing the turn.
@@ -61,6 +61,9 @@ is the loop you're missing.
   merge on regression — pre-existing findings don't block new work.
 - **Claude Code plugin** — skills, slash commands, and hooks that wire
   grading into the edit loop with zero extra configuration.
+- **Editor (LSP)** — `sextant-lsp` powers a VS Code extension (and any
+  other LSP client) with live squiggles and hover-to-explain showing the
+  full rule body.
 - **CLI** — `sextant grade` for human, JSON, markdown, or SARIF output.
   Works offline once installed.
 
@@ -84,12 +87,13 @@ is the loop you're missing.
 
 ## Quickstart
 
-Install the two binaries (release archives, Homebrew tap pending, or
-from source):
+Install the binaries (release archives, Homebrew tap pending, or from
+source):
 
 ```sh
 cargo install --path crates/sextant-cli
 cargo install --path crates/sextant-mcp
+cargo install --path crates/sextant-lsp   # editor integration
 ```
 
 Bootstrap a config and grade your first repo:

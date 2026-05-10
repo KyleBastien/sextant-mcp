@@ -109,6 +109,40 @@ pub fn grade_with(
     Ok(Report::build(findings, verdict))
 }
 
+/// Grade a single in-memory buffer.
+///
+/// For editor integrations (LSP) where the source on disk is stale: callers
+/// pass the live buffer as a `SourceFile` and the engine grades it against
+/// the same `RuleSet` as `grade_with`. Cross-file rules (clones, untested
+/// public functions across crates) won't fire because only one file is in
+/// scope; on-save flows can still call `grade_with` for the full tree.
+///
+/// Files matched by the config's `paths` exclude globs return an empty
+/// report so editor diagnostics line up with what the CLI would have done.
+pub fn grade_file_buffer(
+    repo_root: &Path,
+    file: SourceFile,
+    opts: GradeOptions,
+) -> Result<Report, EngineError> {
+    let config = Config::from_repo_root(repo_root)?;
+    let exclude = config.paths.matcher().map_err(EngineError::Config)?;
+    let rel = file
+        .path
+        .strip_prefix(repo_root)
+        .unwrap_or(file.path.as_path());
+    let thresholds: VerdictThresholds = (&config.verdict).into();
+    if exclude.is_match(rel) {
+        let verdict = thresholds.evaluate(&[]);
+        return Ok(Report::build(Vec::new(), verdict));
+    }
+    let judge = judge_setup::build_judge(repo_root, &config, &opts);
+    let ruleset = RuleSet::load_with(repo_root, &config, judge)?;
+    let ctx = EvalContext { repo_root };
+    let findings = ruleset.grade_files(std::slice::from_ref(&file), &ctx);
+    let verdict = thresholds.evaluate(&findings);
+    Ok(Report::build(findings, verdict))
+}
+
 pub(crate) fn compute_diff(repo_root: &Path, opts: &DiffOptions) -> Result<DiffSet, EngineError> {
     let base_spec = match &opts.base {
         Some(s) => BaseSpec::Ref(s.clone()),
@@ -293,6 +327,12 @@ mod smoke {
             GradeMode::Files {
                 paths: vec![dir.path().to_path_buf()],
             },
+            GradeOptions::default(),
+        )
+        .unwrap();
+        let _ = grade_file_buffer(
+            dir.path(),
+            SourceFile::new(dir.path().join("smoke.rs"), String::new()),
             GradeOptions::default(),
         )
         .unwrap();

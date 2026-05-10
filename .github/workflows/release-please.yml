@@ -12,8 +12,10 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.rp.outputs.release_created }}
-      tag_name: ${{ steps.rp.outputs.tag_name }}
+      rust_release_created: ${{ steps.rp.outputs['.--release_created'] }}
+      rust_tag_name: ${{ steps.rp.outputs['.--tag_name'] }}
+      vscode_release_created: ${{ steps.rp.outputs['editors/vscode--release_created'] }}
+      vscode_tag_name: ${{ steps.rp.outputs['editors/vscode--tag_name'] }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: rp
@@ -22,12 +24,12 @@ jobs:
           manifest-file: .release-please-manifest.json
 
   # release-please pushes the tag using GITHUB_TOKEN, which (by GitHub
-  # design) does not trigger downstream `push: tags` workflows. Dispatch
-  # release.yml explicitly so the build matrix runs and uploads binaries
-  # to the release release-please just created.
+  # design) does not trigger downstream `push: tags` or `release:
+  # published` workflows. Dispatch each downstream pipeline explicitly so
+  # the tag it cares about kicks off the right build.
   trigger-release-build:
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    if: needs.release-please.outputs.rust_release_created == 'true'
     runs-on: ubuntu-latest
     permissions:
       actions: write
@@ -36,9 +38,27 @@ jobs:
       - name: Dispatch release workflow on the new tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.release-please.outputs.tag_name }}
+          TAG: ${{ needs.release-please.outputs.rust_tag_name }}
         run: |
           gh workflow run release.yml \
+            --repo "${{ github.repository }}" \
+            --ref "$TAG" \
+            -f tag="$TAG"
+
+  trigger-vscode-publish:
+    needs: release-please
+    if: needs.release-please.outputs.vscode_release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch vscode-publish workflow on the new tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.vscode_tag_name }}
+        run: |
+          gh workflow run vscode-publish.yml \
             --repo "${{ github.repository }}" \
             --ref "$TAG" \
             -f tag="$TAG"

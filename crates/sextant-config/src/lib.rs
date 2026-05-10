@@ -40,6 +40,7 @@ pub struct Config {
 pub struct VerdictSection {
     pub max_errors: u32,
     pub max_warns: u32,
+    pub max_info: u32,
     /// `absolute` (default) counts every finding; `regression` only
     /// counts findings new vs the baseline. `--pr` overrides this to
     /// `regression` regardless of the file value.
@@ -51,6 +52,7 @@ impl Default for VerdictSection {
         Self {
             max_errors: 0,
             max_warns: u32::MAX,
+            max_info: u32::MAX,
             mode: VerdictMode::Absolute,
         }
     }
@@ -61,6 +63,7 @@ impl From<&VerdictSection> for VerdictThresholds {
         VerdictThresholds {
             max_errors: v.max_errors,
             max_warns: v.max_warns,
+            max_info: v.max_info,
         }
     }
 }
@@ -268,12 +271,13 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(
             &path,
-            "[verdict]\nmax_errors = 2\nmax_warns = 5\n[size]\nfile_length_warn = 100\nfile_length_error = 200\n",
+            "[verdict]\nmax_errors = 2\nmax_warns = 5\nmax_info = 0\n[size]\nfile_length_warn = 100\nfile_length_error = 200\n",
         )
         .unwrap();
         let cfg = Config::from_repo_root(dir.path()).unwrap();
         assert_eq!(cfg.verdict.max_errors, 2);
         assert_eq!(cfg.verdict.max_warns, 5);
+        assert_eq!(cfg.verdict.max_info, 0);
         assert_eq!(cfg.size.file_length_warn, 100);
         assert_eq!(cfg.size.file_length_error, 200);
     }

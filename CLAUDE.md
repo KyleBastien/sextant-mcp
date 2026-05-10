@@ -36,7 +36,7 @@ cd docs && npm install && npm run dev   # local preview at :4321
 
 ## Self-grading: this repo grades itself
 
-Sextant is dogfooded on its own source. **Verdict thresholds in `.sextant/config.toml` are `max_errors = 0`, `max_warns = 0`** — any new finding at warn or above blocks the gate.
+Sextant is dogfooded on its own source. **Verdict thresholds in `.sextant/config.toml` are `max_errors = 0`, `max_warns = 0`, `max_info = 0`** — any new finding at info or above blocks the gate.
 
 `.claude/settings.json` wires three hooks:
 - **`SessionStart`** prints loaded rules.
@@ -46,6 +46,14 @@ Sextant is dogfooded on its own source. **Verdict thresholds in `.sextant/config
 Practical consequence: if you add a finding while editing, the loop will not let you stop until it's clean. Drive every diff to `approve` before ending the turn. The `sextant-self-correct` skill describes the grade → fix → re-grade loop and pass budget.
 
 Escape hatches (use sparingly): `SEXTANT_DISABLE_POST_EDIT=1`, `SEXTANT_DISABLE_STOP=1`, `SEXTANT_DISABLE_SESSION_START=1`.
+
+**Never silence a finding instead of fixing it.** Sextant has no exemption mechanism by design. When the gate fires, the response is to fix the underlying issue — refactor, drop an unused export, write the missing test, raise visibility, split a too-long file. Specifically forbidden:
+- Adding paths to `[paths.exclude]` to hide findings (the exclude list is for generated artifacts like `target/`, not for source the rule legitimately covers).
+- Lowering thresholds in `.sextant/config.toml` (raising `max_errors`/`max_warns`/`max_info`, or relaxing per-rule limits in `[size]`/`[complexity]`/`[duplication]`) to let a finding through.
+- Editing rule frontmatter to downgrade severity below the threshold.
+- Disabling the post-edit/stop hooks via the escape-hatch env vars to ship without grading.
+
+If a rule genuinely doesn't fit a piece of code, the right response is to make the rule smarter (e.g. teach it about a new convention) — not to carve out a hole. The `sextant-engine`'s `lib_tests.rs` extraction from `lib.rs` to stay under the file-length threshold is the model: refactor, don't relax.
 
 The strictest built-in to watch: file-length warns at 400 lines, errors at 800. `sextant-engine`'s `lib_tests.rs` was extracted from `lib.rs` specifically to stay under the threshold — follow that pattern rather than relaxing the config.
 

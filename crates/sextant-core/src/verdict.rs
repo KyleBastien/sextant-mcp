@@ -27,6 +27,7 @@ pub enum VerdictMode {
 pub struct VerdictThresholds {
     pub max_errors: u32,
     pub max_warns: u32,
+    pub max_info: u32,
 }
 
 impl Default for VerdictThresholds {
@@ -34,6 +35,7 @@ impl Default for VerdictThresholds {
         Self {
             max_errors: 0,
             max_warns: u32::MAX,
+            max_info: u32::MAX,
         }
     }
 }
@@ -42,11 +44,12 @@ impl VerdictThresholds {
     pub fn evaluate(&self, findings: &[Finding]) -> Verdict {
         let mut errors = 0u32;
         let mut warns = 0u32;
+        let mut infos = 0u32;
         for f in findings {
             match f.severity {
                 Severity::Error => errors += 1,
                 Severity::Warn => warns += 1,
-                Severity::Info => {}
+                Severity::Info => infos += 1,
             }
         }
         let mut reasons = Vec::new();
@@ -60,6 +63,12 @@ impl VerdictThresholds {
             reasons.push(format!(
                 "{warns} warn finding(s) exceeds limit of {}",
                 self.max_warns
+            ));
+        }
+        if infos > self.max_info {
+            reasons.push(format!(
+                "{infos} info finding(s) exceeds limit of {}",
+                self.max_info
             ));
         }
         if reasons.is_empty() {
@@ -91,6 +100,7 @@ mod tests {
         let t = VerdictThresholds {
             max_errors: 0,
             max_warns: 5,
+            max_info: u32::MAX,
         };
         assert_eq!(t.evaluate(&[finding(Severity::Warn)]), Verdict::Approve);
         assert_eq!(t.evaluate(&[finding(Severity::Info)]), Verdict::Approve);
@@ -101,6 +111,7 @@ mod tests {
         let t = VerdictThresholds {
             max_errors: 0,
             max_warns: u32::MAX,
+            max_info: u32::MAX,
         };
         match t.evaluate(&[finding(Severity::Error)]) {
             Verdict::RequestChanges { reasons } => assert_eq!(reasons.len(), 1),
@@ -109,10 +120,27 @@ mod tests {
     }
 
     #[test]
+    fn request_changes_when_info_exceeds_max_info() {
+        let t = VerdictThresholds {
+            max_errors: 0,
+            max_warns: u32::MAX,
+            max_info: 0,
+        };
+        match t.evaluate(&[finding(Severity::Info)]) {
+            Verdict::RequestChanges { reasons } => {
+                assert_eq!(reasons.len(), 1);
+                assert!(reasons[0].contains("info"));
+            }
+            _ => panic!("expected RequestChanges for info over threshold"),
+        }
+    }
+
+    #[test]
     fn evaluate_regression_only_counts_new_findings() {
         let t = VerdictThresholds {
             max_errors: 0,
             max_warns: u32::MAX,
+            max_info: u32::MAX,
         };
         let unchanged = vec![finding(Severity::Error)];
         let new_finding = vec![finding(Severity::Error)];

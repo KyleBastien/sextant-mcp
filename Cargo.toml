@@ -10,8 +10,9 @@ members = [
     "crates/sextant-engine",
     "crates/sextant-cli",
     "crates/sextant-mcp",
+    "crates/sextant-lsp",
 ]
-exclude = ["docs"]
+exclude = ["docs", "editors"]
 
 [workspace.package]
 version = "0.1.0"
@@ -55,6 +56,9 @@ tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", 
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 blake3 = "1"
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
+tower-lsp = "0.20"
+dashmap = "6"
+url = "2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
