@@ -44,11 +44,20 @@ any new violation in a `--diff` or `--pr` grade fails the gate.
 | `vendor.typescript.no-empty-interface` | `interface Foo {}` | Add members or remove the declaration. |
 | `vendor.typescript.no-eval` | `eval()` calls | Use a real parser, JSON.parse, or a function map. |
 | `vendor.typescript.prefer-inferred-types` | `const x: string = "hi"` and friends | Drop the redundant primitive annotation. |
+| `vendor.typescript.no-never-annotation` | `: never` annotations | Throw, or use an exhaustive switch. `T extends X ? Y : never` stays legal. |
+| `vendor.typescript.no-jsdoc-types` | `/** @type {…} */`, `/** @param {…} */`, etc. | Write a real TypeScript annotation. **Ships native autofix.** |
+| `vendor.typescript.no-ambient-module-shim` | `declare module "x" {}` (empty body) | Install `@types/x`, write real `.d.ts`, or use a typed adapter. **Ships native autofix.** |
+| `vendor.typescript.no-empty-type-construction` | `Pick<T, never>`, `Record<never, V>`, `Omit<T, keyof T>` | Spell out the keys or delete the type. |
+| `vendor.typescript.no-implicit-any-field` | `interface User { id; … }`, `class C { count; … }` (no annotation, no initializer) | Always annotate the field type, or give it an initializer the compiler can infer from. |
 
-All rules use the [`ast`
+Most rules use the [`ast`
 evaluator](/sextant-mcp/concepts/evaluator/#ast--tree-sitter-query),
 so matches respect the parsed TypeScript syntax tree — `any` inside a
-string literal or comment doesn't fire.
+string literal or comment doesn't fire. Two of the rules
+(`no-jsdoc-types`, `no-ambient-module-shim`) use the [`regex`
+evaluator](/sextant-mcp/concepts/evaluator/#regex) with a
+`replacement` template so each finding ships a proposed unified-diff
+patch.
 
 ## Detection details
 
@@ -135,6 +144,56 @@ a primitive literal. It ignores:
 
 So `const greeting: string = "hello"` fires; `const x: User = makeUser()`
 doesn't.
+
+### `no-never-annotation`: the conditional-type exemption
+
+```ts
+// Banned
+function load(id: string): never { return cache.get(id) as never; }
+const x: never = doThing();
+
+// Allowed
+type NonNull<T> = T extends null | undefined ? never : T;
+function unreachable(msg: string): never { throw new Error(msg); }
+```
+
+The rule's `not_under: [conditional_type]` exemption drops matches
+whose ancestor is a `conditional_type` AST node — the standard
+`T extends X ? Y : never` pattern. A function that throws still has
+return-type inference, so dropping the `: never` annotation when the
+body throws is the right fix.
+
+### `no-empty-type-construction`: when `{}` hides in plain sight
+
+```ts
+// All resolve to `{}`
+type E = Pick<User, never>;
+type R = Record<never, string>;
+type O = Omit<User, keyof User>;
+```
+
+[`no-empty-object-type`](#no-empty-object-type-vs-no-empty-interface)
+only matches the literal `{}` token. These constructions all evaluate
+to `{}` at the type level and so slip past it. The rule fires when
+the second argument to `Pick` is the literal `never`, the first
+argument to `Record` is `never`, or the second argument to `Omit` is
+a `keyof` expression.
+
+### `no-jsdoc-types` and `no-ambient-module-shim`: the autofix pair
+
+These two rules use the `regex` evaluator with a `replacement`
+template, so each finding carries a proposed unified-diff patch:
+
+- `no-jsdoc-types`: the patch strips the `{…}` payload from each
+  `@type`/`@param`/`@returns`/`@typedef`/`@property` tag. The
+  author's job is to add the equivalent TypeScript annotation on the
+  following declaration.
+- `no-ambient-module-shim`: the patch deletes the empty shim line.
+  The author writes real ambient types in its place.
+
+The other rules use the `ast` evaluator and don't carry native
+patches. Opt into LLM-synthesised patches for AST-rule findings via
+`[autofix] llm_synthesis = true` in `.sextant/config.toml`.
 
 ## Bypass attempts
 
