@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.1...v0.1.2) (2026-05-10)
+
+
+### Bug Fixes
+
+* ship MIT LICENSE files so vsce publish stops being flagged as suspicious ([#13](https://github.com/KyleBastien/sextant-mcp/issues/13)) ([1f0b0b1](https://github.com/KyleBastien/sextant-mcp/commit/1f0b0b10d3f32913e699ed21f66b30e4b39a29f8))
+
 ## [0.1.1](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.0...v0.1.1) (2026-05-10)
 
 
