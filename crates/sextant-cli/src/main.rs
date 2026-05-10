@@ -105,6 +105,24 @@ enum RulesCmd {
         /// Path to a `.md` rule file.
         path: PathBuf,
     },
+    /// Install a vendor rule pack from GitHub or a local path.
+    Add {
+        /// Pack spec: `github:owner/repo@<ref>[#subdir]` or `file:<path>[#subdir]`.
+        spec: String,
+        /// Override the pack name (defaults to the value in `pack.toml`).
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Refresh installed vendor packs from their pinned references.
+    Update {
+        /// Specific packs to update (empty = all).
+        packs: Vec<String>,
+    },
+    /// Remove an installed vendor pack and drop its lock entry.
+    Remove {
+        /// Pack name as recorded in `.sextant/rules.lock`.
+        name: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -155,11 +173,18 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             fail_on,
             no_llm,
         }),
-        Cmd::Rules { cmd } => match cmd {
-            RulesCmd::List => commands::rules::list(),
-            RulesCmd::Explain { id } => commands::rules::explain(&id),
-            RulesCmd::Check { path } => commands::rules::check(&path),
-        },
+        Cmd::Rules { cmd } => dispatch_rules(cmd),
         Cmd::Init { template, force } => commands::init::run(template, force),
+    }
+}
+
+fn dispatch_rules(cmd: RulesCmd) -> Result<ExitCode> {
+    match cmd {
+        RulesCmd::List => commands::rules::list(),
+        RulesCmd::Explain { id } => commands::rules::explain(&id),
+        RulesCmd::Check { path } => commands::rules::check(&path),
+        RulesCmd::Add { spec, name } => commands::rules::add(&spec, name.as_deref()),
+        RulesCmd::Update { packs } => commands::rules::update(&packs),
+        RulesCmd::Remove { name } => commands::rules::remove(&name),
     }
 }

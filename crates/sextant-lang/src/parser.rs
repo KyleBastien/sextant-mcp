@@ -31,7 +31,9 @@ impl Language {
         }
     }
 
-    pub(crate) fn ts_language(self) -> tree_sitter::Language {
+    /// Tree-sitter `Language` handle for this language. Public so external
+    /// evaluators (e.g. AST-query rules) can compile queries against it.
+    pub fn ts_language(self) -> tree_sitter::Language {
         match self {
             Language::Rust => tree_sitter_rust::language(),
             Language::Python => tree_sitter_python::language(),
@@ -101,5 +103,22 @@ mod tests {
         assert_eq!(p.language, Language::Rust);
         assert_eq!(p.source, src);
         assert_eq!(p.tree.root_node().kind(), "source_file");
+    }
+
+    #[test]
+    fn ts_language_returns_a_real_grammar_for_each_supported_language() {
+        for lang in [
+            Language::Rust,
+            Language::Python,
+            Language::Go,
+            Language::Java,
+            Language::TypeScript,
+            Language::Tsx,
+            Language::JavaScript,
+        ] {
+            // The grammar handle is opaque, but every supported language
+            // must produce one without panicking.
+            let _ = lang.ts_language();
+        }
     }
 }

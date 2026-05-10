@@ -46,7 +46,7 @@ tags: [style, todo]
 | `category` | yes | Built-in enum or `{ custom: "<name>" }`. |
 | `scope` | yes | `diff`, `file`, or `repo`. |
 | `languages` | no | Whitelist. Empty = all languages. |
-| `evaluator` | yes | `regex` or `llm` for repo rules. See below. |
+| `evaluator` | yes | `regex`, `ast`, or `llm` for repo rules. See below. |
 | `enabled` | no | Default `true`. Set `false` for a stub overriding a built-in. |
 | `overrides` | no | Rule ids this rule replaces. |
 | `tags` | no | Free-form labels. |
@@ -69,6 +69,36 @@ evaluator:
 
 Cheapest authoring option. The regex runs against each line of each
 file in scope; every match is one finding pointing at that line.
+
+### `ast` — tree-sitter query
+
+Runs a tree-sitter query against the file's parse tree. Pick this
+when you need to distinguish a keyword in a type position from the
+same keyword in a comment or string, or when you need to scope a
+match by ancestor node kind.
+
+```yaml
+evaluator:
+  type: ast
+  query: '((predefined_type) @t (#eq? @t "any"))'
+  capture: t
+  message: "no `any` allowed"
+  not_under: [catch_clause]
+  exclude_paths: ["**/dist/**"]
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `query` | yes | Tree-sitter query S-expression, compiled per language listed in `languages:`. |
+| `capture` | no | Capture name to anchor the finding line. Defaults to the first capture. |
+| `message` | no | Override message. Defaults to `<rule.name>: matched <snippet>`. |
+| `not_under` | no | Drop a match if any ancestor's node kind is in this list. |
+| `exclude_paths` | no | Glob patterns that skip files. |
+
+`ast` rules **require** at least one language in `languages:`. The
+same query string is compiled once per listed language, so you can
+target both `typescript` and `tsx` (which share grammar) with one
+file.
 
 ### `llm` — LLM-as-judge
 
@@ -201,10 +231,19 @@ suggesting a one-line description.
 {{code}}
 ```
 
+## Bundling rules into a pack
+
+If you want to **distribute** a rule set — to other repos, other
+teams, or the internet — bundle the markdown files into a [rule
+pack](/sextant-mcp/packs/). A pack adds a `pack.toml` manifest, lives
+under `.sextant/rules/vendor/<name>/` once installed, and ships
+hash-locked so consumers can't silently disable individual rules.
+
 ## See also
 
 - [Rule concept](/sextant-mcp/concepts/rule/) — the data model.
-- [Evaluator concept](/sextant-mcp/concepts/evaluator/) — `regex` vs
-  `llm`.
+- [Evaluator concept](/sextant-mcp/concepts/evaluator/) — `regex`,
+  `ast`, and `llm` in detail.
+- [Rule packs](/sextant-mcp/packs/) — package and ship a rule set.
 - [Configuration → judge](/sextant-mcp/configuration/judge/) — LLM
   provider config.

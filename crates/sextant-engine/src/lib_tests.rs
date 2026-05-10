@@ -164,6 +164,71 @@ fn grade_pr_returns_only_new_findings_in_delta() {
     assert!(pr.delta.base_sha.is_some());
 }
 
+/// Regression: a PR that introduces a new repo rule must not see
+/// pre-existing violations in unchanged files reported as "fixed by
+/// this PR". The baseline grade is whole-tree (so a new rule fires on
+/// every existing match) while head is diff-only (so the same files
+/// produce zero findings if they're not touched). Without scoping the
+/// baseline to diff paths, those zero-vs-nonzero comparisons
+/// incorrectly mark the findings as fixed.
+#[test]
+fn grade_pr_does_not_count_untouched_files_as_fixed_when_a_rule_is_added() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    write(root, ".sextant/config.toml", "[verdict]\nmax_errors = 0\n");
+    // Pre-existing file containing the marker — base never had a rule
+    // for it, so the baseline (under HEAD's ruleset) will produce a
+    // finding here that *looks* fixable but isn't actually touched.
+    write(root, "untouched.rs", "fn x() { /* MARKER42 */ }\n");
+    write(root, "ok.rs", "fn ok() {}\n");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "base"]);
+
+    // PR introduces a new repo rule + an unrelated edit. The rule's own
+    // pattern is unique (MARKER42), so the rule definition file doesn't
+    // self-match. ok.rs is the only path with content the PR actually
+    // changed.
+    write(
+        root,
+        ".sextant/rules/marker.md",
+        "---\nid: project.marker\nname: \"Marker\"\ndescription: \"banned token\"\nseverity: warn\ncategory: style\nevaluator: { type: regex, pattern: \"\\\\bMARKER42\\\\b\" }\n---\n",
+    );
+    write(root, "ok.rs", "fn ok() { /* unrelated */ }\n");
+    git(root, &["add", "."]);
+    git(
+        root,
+        &["commit", "-q", "-m", "add marker rule and edit ok.rs"],
+    );
+
+    let pr = grade_pr(
+        root,
+        DiffOptions {
+            base: Some("HEAD~1".into()),
+            head: None,
+            working_tree: false,
+        },
+        PrOptions::default(),
+    )
+    .expect("grade_pr");
+
+    let fixed_paths: Vec<_> = pr
+        .delta
+        .fixed_findings
+        .iter()
+        .map(|f| f.path.to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        !fixed_paths.iter().any(|p| p.contains("untouched.rs")),
+        "untouched.rs should not appear as `fixed`; got: {fixed_paths:?}",
+    );
+    assert!(
+        pr.delta.new_findings.is_empty(),
+        "no new findings expected on the touched path; got: {:?}",
+        pr.delta.new_findings,
+    );
+}
+
 #[test]
 fn grade_pr_baseline_cache_round_trips() {
     let dir = tempfile::tempdir().unwrap();

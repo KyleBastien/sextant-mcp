@@ -6,12 +6,16 @@
 //! Rust evaluator. Repo-local rules under `<root>/.sextant/rules/**/*.md`
 //! use `evaluator: { type: regex, ... }` and require no Rust code at all.
 
+mod ast_rule;
 mod complexity;
 mod duplication;
+pub mod fetcher;
 mod file_length;
 mod fn_length;
 mod llm_rule;
 pub mod loader;
+pub mod lock;
+mod merge;
 mod param_count;
 mod pub_fn_test;
 mod regex_rule;
@@ -24,12 +28,15 @@ use sextant_core::{EvalContext, Evaluator, Finding, SourceFile};
 use sextant_judge::Judge;
 use thiserror::Error;
 
+pub use ast_rule::{AstBuildError, AstRule, AstRuleSpec};
 pub use complexity::ComplexityRule;
 pub use duplication::DuplicationRule;
 pub use file_length::FileLengthRule;
 pub use fn_length::FnLengthRule;
 pub use llm_rule::{LlmRule, LlmRuleSpec};
-pub use loader::{builtin_rules, parse_rule_md, repo_rules, EvaluatorSpec, ParsedRule};
+pub use loader::{
+    builtin_rules, parse_rule_md, repo_rules, vendor_rules, EvaluatorSpec, ParsedRule,
+};
 pub use param_count::ParamCountRule;
 pub use pub_fn_test::PubFnUntestedRule;
 pub use regex_rule::{RegexBuildError, RegexRule};
@@ -44,6 +51,8 @@ pub enum RuleSetError {
         #[source]
         source: RegexBuildError,
     },
+    #[error("ast evaluator: {0}")]
+    Ast(#[from] AstBuildError),
     #[error("unknown built-in evaluator name `{name}` in rule `{rule}`")]
     UnknownBuiltin { rule: String, name: String },
 }
@@ -71,7 +80,11 @@ impl RuleSet {
         config: &Config,
         judge: Option<Arc<Judge>>,
     ) -> Result<Self, RuleSetError> {
-        let parsed = loader::merge(loader::builtin_rules()?, loader::repo_rules(repo_root)?);
+        let parsed = loader::merge_all(
+            loader::builtin_rules()?,
+            loader::vendor_rules(repo_root)?,
+            loader::repo_rules(repo_root)?,
+        )?;
         let mut evaluators: Vec<Arc<dyn Evaluator>> = Vec::with_capacity(parsed.len());
         for rule in parsed {
             if let Some(ev) = build_evaluator(rule, config, judge.as_ref())? {
@@ -128,6 +141,22 @@ fn build_evaluator(
                 exclude_paths,
             };
             build_llm(rule, Arc::clone(judge), spec).map(Some)
+        }
+        EvaluatorSpec::Ast {
+            query,
+            capture,
+            message,
+            not_under,
+            exclude_paths,
+        } => {
+            let spec = AstRuleSpec {
+                query: &query,
+                capture: capture.as_deref(),
+                message: message.as_deref(),
+                not_under: &not_under,
+                exclude_paths: &exclude_paths,
+            };
+            Ok(Some(Arc::new(AstRule::from_parsed(rule, spec)?)))
         }
     }
 }

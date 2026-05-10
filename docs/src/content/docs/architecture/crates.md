@@ -29,12 +29,24 @@ files asks this crate which files to skip.
 
 ## `sextant-rules`
 
-Two responsibilities: rule discovery and built-in evaluators.
-Discovery walks `.sextant/rules/**/*.md`, parses YAML frontmatter +
-markdown body via `gray_matter`, validates against the schema, and
-returns `Rule` values. Built-ins are embedded in the binary via
-`rust-embed` and parsed the same way — they're the seven shipped
-rules, plus their Rust evaluator implementations.
+Rule discovery, evaluators, and the [vendor pack](/sextant-mcp/packs/)
+plumbing. Three layered concerns:
+
+1. **Discovery & schema.** Parses YAML frontmatter + markdown body
+   via `gray_matter`, validates against the rule schema, returns
+   `ParsedRule` values. Walks three sources: built-ins (embedded via
+   `rust-embed`), repo-local rules under
+   `.sextant/rules/**/*.md` (excluding `vendor/`), and vendor packs
+   (one directory per pack under `vendor/`). The three-tier merge
+   enforces vendor immutability — a repo rule that shadows a vendor
+   id is a hard error.
+2. **Evaluators.** Four kinds: `builtin` (Rust impls of the seven
+   shipped rules), `regex` (line-by-line text), `ast` (tree-sitter
+   query with optional ancestor-skip), and `llm` (judge-driven).
+3. **Vendor pack lifecycle.** `fetcher.rs` parses pack specs and
+   clones from GitHub via `git2` (or copies from a `file:` path) into
+   a hashed staging dir. `lock.rs` reads, writes, and verifies
+   `.sextant/rules.lock`, the SHA-256 record that gates every grade.
 
 ## `sextant-diff`
 
@@ -80,7 +92,10 @@ no command-line parsing, no JSON-RPC framing, no markdown rendering.
 The `sextant` binary. Wraps the engine with `clap` argument parsing
 and one render module per output format (`human`, `json`, `markdown`,
 `sarif`, `review-json`). Subcommands: `grade`, `rules` (with
-`list` / `explain` / `check`), and `init`. Tests are largely
+`list` / `explain` / `check` / `add` / `update` / `remove`), and
+`init`. The `rules add`-family subcommands delegate to
+`sextant-rules::fetcher` and `sextant-rules::lock` — the binary
+itself doesn't open sockets or write hashes. Tests are largely
 snapshot-based via `insta`.
 
 ## `sextant-mcp`

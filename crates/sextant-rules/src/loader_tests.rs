@@ -159,3 +159,178 @@ evaluator: { type: regex, pattern: "x" }
     );
     assert!(merge(vec![a], vec![]).is_empty());
 }
+
+fn vendor(id: &str, pack: &str) -> ParsedRule {
+    rule(
+        &format!(
+            r#"---
+id: {id}
+name: V
+description: x
+severity: error
+category: style
+evaluator: {{ type: regex, pattern: "x" }}
+---
+"#
+        ),
+        RuleSource::Vendor(pack.into()),
+    )
+}
+
+#[test]
+fn merge_all_vendor_overrides_builtin() {
+    let b = builtin("conflict.id");
+    let v = vendor("conflict.id", "ts");
+    let merged = merge_all(vec![b], vec![v], vec![]).unwrap();
+    assert_eq!(merged.len(), 1);
+    assert!(matches!(merged[0].source, RuleSource::Vendor(_)));
+}
+
+#[test]
+fn merge_all_repo_shadowing_vendor_is_an_error() {
+    let v = vendor("vendor.ts.no-any", "typescript");
+    let r = rule(
+        r#"---
+id: vendor.ts.no-any
+name: shadow
+description: x
+severity: warn
+category: style
+evaluator: { type: regex, pattern: "y" }
+---
+"#,
+        RuleSource::Repo,
+    );
+    let err = merge_all(vec![], vec![v], vec![r]).unwrap_err();
+    assert!(matches!(err, LoaderError::ShadowsVendor { .. }));
+}
+
+#[test]
+fn merge_all_repo_overrides_cannot_disable_vendor_rules() {
+    let v = vendor("vendor.ts.no-any", "typescript");
+    let r = rule(
+        r#"---
+id: repo.disabler
+name: disabler
+description: x
+severity: warn
+category: style
+overrides: ["vendor.ts.no-any"]
+evaluator: { type: regex, pattern: "y" }
+---
+"#,
+        RuleSource::Repo,
+    );
+    let merged = merge_all(vec![], vec![v], vec![r]).unwrap();
+    assert!(merged.iter().any(|m| m.id == "vendor.ts.no-any"));
+}
+
+#[test]
+fn merge_all_vendor_overrides_can_disable_other_rules() {
+    let target = builtin("builtin.target");
+    let v_pack = rule(
+        r#"---
+id: vendor.disabler
+name: disabler
+description: x
+severity: error
+category: style
+overrides: ["builtin.target"]
+evaluator: { type: regex, pattern: "y" }
+---
+"#,
+        RuleSource::Vendor("ts".into()),
+    );
+    let merged = merge_all(vec![target], vec![v_pack], vec![]).unwrap();
+    let ids: Vec<_> = merged.iter().map(|r| r.id.as_str()).collect();
+    assert!(!ids.contains(&"builtin.target"));
+    assert!(ids.contains(&"vendor.disabler"));
+}
+
+#[test]
+fn merge_all_vendor_rule_with_enabled_false_still_loads() {
+    // Vendor rules deliberately bypass the `enabled: false` field — the
+    // pack author shouldn't ship a disabled rule, and the lock-integrity
+    // check ensures the bytes match what they did ship. Repo-level rules
+    // still respect `enabled: false`.
+    let v = rule(
+        r#"---
+id: vendor.x
+name: X
+description: x
+severity: error
+category: style
+enabled: false
+evaluator: { type: regex, pattern: "x" }
+---
+"#,
+        RuleSource::Vendor("ts".into()),
+    );
+    let merged = merge_all(vec![], vec![v], vec![]).unwrap();
+    assert_eq!(merged.len(), 1);
+    assert_eq!(merged[0].id, "vendor.x");
+}
+
+#[test]
+fn vendor_rules_returns_empty_when_lock_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(vendor_rules(dir.path()).unwrap().is_empty());
+}
+
+fn install_test_pack(root: &std::path::Path, pack_name: &str, rule_md: &str) {
+    use crate::lock::{hash_bytes, LockFile, LockedPack};
+    use std::collections::BTreeMap;
+    let pack_dir = root
+        .join(".sextant")
+        .join("rules")
+        .join("vendor")
+        .join(pack_name);
+    std::fs::create_dir_all(pack_dir.join("rules")).unwrap();
+    let pack_toml = format!("name = \"{pack_name}\"\n");
+    std::fs::write(pack_dir.join("pack.toml"), &pack_toml).unwrap();
+    std::fs::write(pack_dir.join("rules/demo.md"), rule_md).unwrap();
+    let mut files = BTreeMap::new();
+    files.insert("pack.toml".into(), hash_bytes(pack_toml.as_bytes()));
+    files.insert("rules/demo.md".into(), hash_bytes(rule_md.as_bytes()));
+    let mut lock = LockFile::empty();
+    lock.upsert(LockedPack {
+        name: pack_name.into(),
+        source: format!("file:./{pack_name}"),
+        reference: "v0".into(),
+        revision: "deadbeef".into(),
+        subdir: String::new(),
+        fetched_at: String::new(),
+        files,
+    });
+    lock.write(root).unwrap();
+}
+
+const DEMO_RULE_MD: &str = r#"---
+id: vendor.ts.demo
+name: Demo
+description: x
+severity: error
+category: style
+evaluator: { type: regex, pattern: "x" }
+---
+"#;
+
+#[test]
+fn vendor_rules_loads_pack_files_against_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    install_test_pack(dir.path(), "ts", DEMO_RULE_MD);
+    let rules = vendor_rules(dir.path()).unwrap();
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0].id, "vendor.ts.demo");
+    assert_eq!(rules[0].source, RuleSource::Vendor("ts".into()));
+}
+
+#[test]
+fn vendor_rules_fails_when_pack_dir_tampered() {
+    let dir = tempfile::tempdir().unwrap();
+    install_test_pack(dir.path(), "ts", DEMO_RULE_MD);
+    let demo = dir.path().join(".sextant/rules/vendor/ts/rules/demo.md");
+    std::fs::write(&demo, "tampered").unwrap();
+    let err = vendor_rules(dir.path()).unwrap_err();
+    assert!(matches!(err, LoaderError::Lock(_)));
+}
