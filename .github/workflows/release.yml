@@ -98,7 +98,7 @@ jobs:
           else
             cp "$src_dir/sextant" "$src_dir/sextant-mcp" "$stage/"
           fi
-          cp README.md LICENSE-MIT LICENSE-APACHE "$stage/" 2>/dev/null || true
+          cp README.md LICENSE "$stage/"
 
           asset="${stage}.${ext}"
           if [ "$ext" = "zip" ]; then

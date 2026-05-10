@@ -10,7 +10,7 @@ The extension talks to a `sextant-lsp` binary. Install both:
 
 ```sh
 # 1. Install the LSP binary on your PATH
-cargo install --path https://github.com/kylebastien/sextant-mcp.git#crates/sextant-lsp
+cargo install --git https://github.com/kylebastien/sextant-mcp sextant-lsp
 
 # 2. Install the extension
 code --install-extension kylebastien.sextant
