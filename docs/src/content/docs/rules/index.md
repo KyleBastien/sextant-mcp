@@ -28,11 +28,22 @@ thresholds in
 ## Authoring your own
 
 [Authoring rules](/sextant-mcp/rules/authoring/) covers the full
-schema for `.sextant/rules/<name>.md` files — `regex` and `llm`
-evaluators, frontmatter fields, validation flow.
+schema for `.sextant/rules/<name>.md` files — `regex`, `ast`, and
+`llm` evaluators, frontmatter fields, validation flow.
+
+## Installing a rule pack
+
+For curated rule sets shipped by another team (or another repo of
+yours), see [Rule packs](/sextant-mcp/packs/). Packs are
+hash-locked, agent-resistant bundles installed via `sextant rules add
+github:owner/repo@tag`. The first shipped pack is the
+[TypeScript pack](/sextant-mcp/packs/typescript/).
 
 ## See also
 
 - [Rule concept](/sextant-mcp/concepts/rule/) — the data model.
 - [Authoring rules](/sextant-mcp/rules/authoring/) — write your own.
-- [`sextant rules`](/sextant-mcp/cli/rules/) — list, explain, validate.
+- [Rule packs](/sextant-mcp/packs/) — install or author a shareable
+  rule bundle.
+- [`sextant rules`](/sextant-mcp/cli/rules/) — list, explain,
+  validate, install.

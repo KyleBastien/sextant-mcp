@@ -55,6 +55,10 @@ export default defineConfig({
 					items: [{ autogenerate: { directory: 'rules' } }],
 				},
 				{
+					label: 'Rule Packs',
+					items: [{ autogenerate: { directory: 'packs' } }],
+				},
+				{
 					label: 'Configuration',
 					items: [{ autogenerate: { directory: 'configuration' } }],
 				},

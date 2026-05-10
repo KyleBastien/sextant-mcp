@@ -1,13 +1,13 @@
 ---
 title: Evaluator
-description: The kind of check a rule performs — builtin, regex, or llm.
+description: The kind of check a rule performs — builtin, regex, ast, or llm.
 sidebar:
   order: 6
 ---
 
 An **evaluator** is the engine behind a rule. It's the component that
 takes some code and produces (or doesn't produce) findings. Sextant
-ships three evaluator types.
+ships four evaluator types.
 
 ## `builtin` — Rust evaluator
 
@@ -49,6 +49,42 @@ evaluator:
 The rule fires once per matched line. The full body of the rule
 (everything below the frontmatter) becomes the `message` of the
 finding — keep it focused, since it's what the user reads.
+
+## `ast` — tree-sitter query
+
+Runs a tree-sitter query over the file's parse tree. Strictly more
+powerful than `regex` because it sees real syntactic structure: type
+positions vs. value positions, types in strings vs. real types,
+function signatures vs. call sites.
+
+```yaml
+evaluator:
+  type: ast
+  query: '((predefined_type) @t (#eq? @t "any"))'
+  capture: t                          # optional, defaults to first capture
+  message: "no `any` allowed"         # optional override
+  not_under: [catch_clause]           # optional ancestor-skip
+  exclude_paths: ["**/dist/**"]
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `query` | yes | Tree-sitter query S-expression. Compiled once per language listed in `languages`. |
+| `capture` | no | Capture name to anchor the finding line. Defaults to the first capture. |
+| `message` | no | Override message. Falls back to `<rule.name>: matched <snippet>`. |
+| `not_under` | no | Drop a match if any ancestor's node kind is in this list. Used for context-sensitive exemptions like "allow `unknown` only inside `catch_clause`". |
+| `exclude_paths` | no | Glob patterns that skip files. |
+
+The rule must declare at least one entry in `languages:` — the same
+query is compiled once per listed language. AST findings are anchored
+to the capture's start row, then run through the engine's diff
+filter like every other rule output.
+
+`ast` is what powers most [vendor pack
+rules](/sextant-mcp/packs/typescript/) where the precision matters:
+banning the `any` keyword as a type without flagging the substring
+"any" inside a string literal, allowing `as const` while banning all
+other `as` casts, etc.
 
 ## `llm` — LLM-as-judge
 
@@ -94,12 +130,14 @@ full provider config.
 | If your rule is… | Use |
 |---|---|
 | One of the seven built-ins | `builtin` (you wouldn't author this) |
-| A simple lexical check | `regex` |
+| A simple lexical check that doesn't care about syntax | `regex` |
+| A check that needs to distinguish types, function signatures, or other AST shape | `ast` |
 | A pattern that needs context, intent, or natural-language reasoning | `llm` |
 
-Default to `regex` until it isn't expressive enough. LLM rules cost
-real tokens and add latency; they're worth it for things regex
-fundamentally can't do.
+Default to `regex` for cheap text matches. Reach for `ast` when
+false positives in strings or comments are a problem, or when you
+need to scope a match to a specific syntactic position. Reserve
+`llm` for things the type-system layer can't see.
 
 ## See also
 
