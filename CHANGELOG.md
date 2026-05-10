@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.3...v0.1.4) (2026-05-10)
+
+
+### Features
+
+* rule packs + strict TypeScript pack ([#17](https://github.com/KyleBastien/sextant-mcp/issues/17)) ([029cd87](https://github.com/KyleBastien/sextant-mcp/commit/029cd87ea66fee6cfe79bfd7a0778483d576b0db))
+
 ## [0.1.3](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.2...v0.1.3) (2026-05-10)
 
 
