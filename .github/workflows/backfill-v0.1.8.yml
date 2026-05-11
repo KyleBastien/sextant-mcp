@@ -1,0 +1,28 @@
+---
+name: Backfill v0.1.8 GitHub Release
+
+on:
+  push:
+    branches:
+      - claude/backfill-v0.1.8-release
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create v0.1.8 release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view v0.1.8 --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "v0.1.8 release already exists; nothing to do."
+            exit 0
+          fi
+          gh release create v0.1.8 \
+            --repo "${{ github.repository }}" \
+            --target 5db198077cf7f281871033e7b83d9f7b67f431fb \
+            --title "v0.1.8" \
+            --notes "Backfilled by automation. Release-please's body-section parser cannot match an empty body-prefix against the Cargo.toml-derived component 'sextant' — this is structural and unfixable via JSON config. A permanent auto-backfill workflow lands separately so this stops being manual. Changes shipped in v0.1.8: drop package-name from release-please root config (#29)."
