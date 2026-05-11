@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.8...v0.1.9) (2026-05-11)
+
+
+### Features
+
+* auto-backfill missing root release after every main push ([#31](https://github.com/KyleBastien/sextant-mcp/issues/31)) ([6486adf](https://github.com/KyleBastien/sextant-mcp/commit/6486adf078b50fe4407c9d964d7d51af9669144b))
+
 ## [0.1.8](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.7...v0.1.8) (2026-05-11)
 
 

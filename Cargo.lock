@@ -1700,11 +1700,11 @@ dependencies = [
 
 [[package]]
 name = "sextant"
-version = "0.1.8"
+version = "0.1.9"
 
 [[package]]
 name = "sextant-cli"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1723,7 +1723,7 @@ dependencies = [
 
 [[package]]
 name = "sextant-config"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "globset",
  "serde",
@@ -1735,7 +1735,7 @@ dependencies = [
 
 [[package]]
 name = "sextant-core"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "blake3",
  "serde",
@@ -1745,7 +1745,7 @@ dependencies = [
 
 [[package]]
 name = "sextant-diff"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "git2",
  "tempfile",
@@ -1755,7 +1755,7 @@ dependencies = [
 
 [[package]]
 name = "sextant-engine"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "globset",
  "ignore",
@@ -1773,7 +1773,7 @@ dependencies = [
 
 [[package]]
 name = "sextant-judge"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "async-trait",
  "blake3",
@@ -1789,7 +1789,7 @@ dependencies = [
 
 [[package]]
 name = "sextant-lang"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "thiserror 1.0.69",
  "tree-sitter",
@@ -1803,7 +1803,7 @@ dependencies = [
 
 [[package]]
 name = "sextant-lsp"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "clap",
@@ -1823,7 +1823,7 @@ dependencies = [
 
 [[package]]
 name = "sextant-mcp"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "axum",
@@ -1842,7 +1842,7 @@ dependencies = [
 
 [[package]]
 name = "sextant-rules"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "git2",
  "globset",
