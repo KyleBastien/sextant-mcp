@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.7...v0.1.8) (2026-05-11)
+
+
+### Bug Fixes
+
+* drop package-name from root config so component matches empty body prefix ([#29](https://github.com/KyleBastien/sextant-mcp/issues/29)) ([ec10d58](https://github.com/KyleBastien/sextant-mcp/commit/ec10d58cc2a50f97a7109721324ec83bd8363df3))
+
 ## [0.1.7](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.6...v0.1.7) (2026-05-11)
 
 
