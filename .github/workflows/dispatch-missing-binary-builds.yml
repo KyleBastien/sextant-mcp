@@ -1,17 +1,14 @@
 ---
-name: Retroactively dispatch release.yml for v0.1.5-v0.1.8
+name: Retroactively dispatch release.yml for v0.1.5-v0.1.9
 
-# Each of v0.1.5, v0.1.6, v0.1.7, v0.1.8 was created without binary
-# assets — the release-please.yml's trigger-release-build step was
-# skipped (gated on `rust_release_created == 'true'`, which is false
-# whenever release-please's silent-skip body-parser bug fires).
+# Each of v0.1.5 through v0.1.9 was created without binary assets —
+# the release-please.yml's trigger-release-build step was skipped
+# (gated on `rust_release_created == 'true'`, which is false whenever
+# release-please's silent-skip body-parser bug fires).
 #
-# This one-shot workflow dispatches release.yml for each of those
-# tags so the cross-platform binary build pipeline runs and uploads
-# the assets to the existing releases. release.yml's upload step
-# uses `softprops/action-gh-release` with `fail_on_unmatched_files`
-# but it should attach to the existing tag-matched release rather
-# than create a new one.
+# This one-shot workflow dispatches release.yml for each tag so the
+# cross-platform binary build pipeline runs and uploads the assets to
+# the existing releases.
 #
 # Safe to delete this workflow and branch after the dispatches
 # complete and the binary builds finish.
@@ -33,7 +30,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for tag in v0.1.5 v0.1.6 v0.1.7 v0.1.8; do
+          for tag in v0.1.5 v0.1.6 v0.1.7 v0.1.8 v0.1.9; do
             echo "Dispatching release.yml for ${tag}..."
             gh workflow run release.yml \
               --repo "${{ github.repository }}" \
