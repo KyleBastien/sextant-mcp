@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.6...v0.1.7) (2026-05-11)
+
+
+### Bug Fixes
+
+* set empty component on root package so release tagging matches ([#27](https://github.com/KyleBastien/sextant-mcp/issues/27)) ([6a551aa](https://github.com/KyleBastien/sextant-mcp/commit/6a551aa643c1cc9d02c7d74438122a0eaa1796c0))
+
 ## [0.1.6](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.5...v0.1.6) (2026-05-11)
 
 
