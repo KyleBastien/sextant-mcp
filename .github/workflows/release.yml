@@ -30,11 +30,11 @@ jobs:
             target: aarch64-unknown-linux-musl
             runner: ubuntu-latest
             ext: tar.gz
-          - os: macos
-            arch: x86_64
-            target: x86_64-apple-darwin
-            runner: macos-13
-            ext: tar.gz
+          # Intel-arch macOS dropped: the `macos-13` runner is retired
+          # from the GitHub-hosted free pool, and the current Intel
+          # labels (`macos-14-large`, `macos-15-intel`, etc.) are paid
+          # larger runners. Apple is fully ARM-based; Intel Mac users
+          # can run the aarch64 build under Rosetta 2 transparently.
           - os: macos
             arch: aarch64
             target: aarch64-apple-darwin
