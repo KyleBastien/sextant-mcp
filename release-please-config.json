@@ -8,9 +8,7 @@
   "pull-request-title-pattern": "chore: release ${branch}",
   "packages": {
     ".": {
-      "package-name": "sextant",
-      "release-type": "rust",
-      "component": ""
+      "release-type": "rust"
     },
     "editors/vscode": {
       "package-name": "sextant-mcp",
