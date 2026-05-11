@@ -1,0 +1,84 @@
+---
+name: Auto-backfill missing root release
+
+# Release-please-action's body-section parser silently skips creating
+# the root v0.X.Y GitHub release because the Cargo.toml-derived
+# component "sextant" never matches the empty body-section prefix
+# release-please emits for the root package. The skip is unfixable
+# via JSON config (Cargo.toml is the source of truth release-please
+# reads). This workflow fills the gap: on every push to main, if the
+# manifest's `.` version doesn't have a matching GitHub release, it
+# creates one and relabels any `autorelease: pending` PR to
+# `autorelease: tagged` so release-please's deadlock check passes.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read root version from manifest
+        id: manifest
+        run: |
+          VERSION=$(jq -r '.["."]' .release-please-manifest.json)
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Root manifest version: ${VERSION} (tag ${TAG})"
+
+      - name: Check whether the release already exists
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ steps.manifest.outputs.tag }}" \
+               --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ steps.manifest.outputs.tag }} already exists; nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ steps.manifest.outputs.tag }} missing; will backfill."
+          fi
+
+      - name: Create the missing release
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.manifest.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "${{ steps.manifest.outputs.tag }}" \
+            --generate-notes
+
+      - name: Relabel any pending release PRs
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PENDING=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --state merged \
+            --label "autorelease: pending" \
+            --json number --jq '.[].number')
+          if [ -z "$PENDING" ]; then
+            echo "No pending release PRs to relabel."
+            exit 0
+          fi
+          for pr in $PENDING; do
+            echo "Relabeling PR #${pr}: autorelease: pending -> autorelease: tagged"
+            gh pr edit "$pr" \
+              --repo "${{ github.repository }}" \
+              --remove-label "autorelease: pending" \
+              --add-label "autorelease: tagged"
+          done
