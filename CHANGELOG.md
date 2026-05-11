@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.10...v0.1.11) (2026-05-11)
+
+
+### Bug Fixes
+
+* drop retired macos-13 + use sha256sum on Windows ([#36](https://github.com/KyleBastien/sextant-mcp/issues/36)) ([bae2fa2](https://github.com/KyleBastien/sextant-mcp/commit/bae2fa20245185aabc640df962ee0d1a26f7c349))
+
 ## [0.1.10](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.9...v0.1.10) (2026-05-11)
 
 
