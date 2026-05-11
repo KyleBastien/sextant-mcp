@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.6](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.5...v0.1.6) (2026-05-11)
+
+
+### Bug Fixes
+
+* drop ${scope} from title pattern to avoid duplicate capture group ([#25](https://github.com/KyleBastien/sextant-mcp/issues/25)) ([b70d999](https://github.com/KyleBastien/sextant-mcp/commit/b70d999af2e0fe03354f13e4fee016e8ee962594))
+* pin release-please title pattern so root tagging stops failing ([#24](https://github.com/KyleBastien/sextant-mcp/issues/24)) ([2a503b7](https://github.com/KyleBastien/sextant-mcp/commit/2a503b722673a3b714fce3fb4132e3058262d22e))
+
 ## [0.1.5](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.4...v0.1.5) (2026-05-10)
 
 
