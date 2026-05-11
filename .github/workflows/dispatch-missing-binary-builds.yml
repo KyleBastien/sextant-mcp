@@ -1,0 +1,42 @@
+---
+name: Retroactively dispatch release.yml for v0.1.5-v0.1.8
+
+# Each of v0.1.5, v0.1.6, v0.1.7, v0.1.8 was created without binary
+# assets — the release-please.yml's trigger-release-build step was
+# skipped (gated on `rust_release_created == 'true'`, which is false
+# whenever release-please's silent-skip body-parser bug fires).
+#
+# This one-shot workflow dispatches release.yml for each of those
+# tags so the cross-platform binary build pipeline runs and uploads
+# the assets to the existing releases. release.yml's upload step
+# uses `softprops/action-gh-release` with `fail_on_unmatched_files`
+# but it should attach to the existing tag-matched release rather
+# than create a new one.
+#
+# Safe to delete this workflow and branch after the dispatches
+# complete and the binary builds finish.
+
+on:
+  push:
+    branches:
+      - claude/dispatch-missing-binary-builds
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-all:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch release.yml for each missing-binaries tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for tag in v0.1.5 v0.1.6 v0.1.7 v0.1.8; do
+            echo "Dispatching release.yml for ${tag}..."
+            gh workflow run release.yml \
+              --repo "${{ github.repository }}" \
+              --ref "${tag}" \
+              -f tag="${tag}"
+          done
