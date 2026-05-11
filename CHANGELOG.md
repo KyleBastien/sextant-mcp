@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.10](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.9...v0.1.10) (2026-05-11)
+
+
+### Bug Fixes
+
+* dispatch release.yml from auto-backfill so binaries actually build ([#34](https://github.com/KyleBastien/sextant-mcp/issues/34)) ([909e936](https://github.com/KyleBastien/sextant-mcp/commit/909e936c076b03054e4a70ffb4d296370fee1239))
+
 ## [0.1.9](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.8...v0.1.9) (2026-05-11)
 
 
