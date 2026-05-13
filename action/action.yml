@@ -66,16 +66,16 @@ inputs:
   baseline-cache-key:
     description: |
       Cache key for the persisted baseline report. Defaults to
-      `sextant-baseline-${{ inputs.base or HEAD }}`. Override only if you
-      need shared cross-PR caches.
+      `sextant-baseline-<resolved-base>`. Override only if you need
+      shared cross-PR caches.
     required: false
     default: ""
   github-token:
     description: |
-      Token used to post the review comment. Defaults to
-      `${{ github.token }}`. Needs `pull-requests: write` on PR runs.
+      Token used to post the review comment. Defaults to the workflow
+      `github.token`. Needs `pull-requests: write` on PR runs.
     required: false
-    default: ${{ github.token }}
+    default: ""
 
 outputs:
   verdict:
@@ -192,7 +192,7 @@ runs:
       if: ${{ inputs.inline-comments == 'true' && github.event.pull_request.number }}
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token != '' && inputs.github-token || github.token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
       run: $GITHUB_ACTION_PATH/scripts/post-review-inline.sh sextant-review.json
@@ -201,7 +201,7 @@ runs:
       if: ${{ inputs.comment == 'true' && inputs.inline-comments != 'true' && github.event.pull_request.number }}
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token != '' && inputs.github-token || github.token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
       run: $GITHUB_ACTION_PATH/scripts/post-review.sh sextant-review.md
