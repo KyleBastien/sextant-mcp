@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.11...v0.1.12) (2026-05-13)
+
+
+### Bug Fixes
+
+* **action:** drop expression contexts from composite-action input fields ([#38](https://github.com/KyleBastien/sextant-mcp/issues/38)) ([477fc14](https://github.com/KyleBastien/sextant-mcp/commit/477fc14ed0fdc07f0e1424a7a3ff517907ed18f2))
+
 ## [0.1.11](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.10...v0.1.11) (2026-05-11)
 
 
