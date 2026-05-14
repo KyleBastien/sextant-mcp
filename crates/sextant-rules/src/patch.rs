@@ -40,20 +40,21 @@ pub fn replace_line_diff(
     Some(format!("{header}{hunk}"))
 }
 
-/// Build a unified diff that appends `block` (already including any
-/// leading newline as needed) to the end of `contents`. The block should
-/// terminate with `\n` so the resulting file ends with a newline.
-pub fn append_diff(path: &Path, contents: &str, block: &str) -> String {
-    let total_lines = contents.matches('\n').count() as u32;
+/// Build a unified diff that creates a new file at `path` with `contents`.
+/// The contents should end with `\n` so the resulting file ends with a
+/// newline. Uses `/dev/null` for the old path per `git diff` convention.
+pub fn create_file_diff(path: &Path, contents: &str) -> String {
+    let p = path.display();
+    let header = format!("--- /dev/null\n+++ b/{p}\n");
+    let lines: Vec<&str> = contents.split_inclusive('\n').collect();
     let trailing_newline = contents.ends_with('\n') || contents.is_empty();
     let context = if trailing_newline {
         ""
     } else {
         "\\ No newline at end of file\n"
     };
-    let added: Vec<&str> = block.split_inclusive('\n').collect();
     let mut hunk_body = String::new();
-    for line in &added {
+    for line in &lines {
         let stripped = line.strip_suffix('\n').unwrap_or(line);
         hunk_body.push('+');
         hunk_body.push_str(stripped);
@@ -61,13 +62,8 @@ pub fn append_diff(path: &Path, contents: &str, block: &str) -> String {
             hunk_body.push('\n');
         }
     }
-    let added_count = added.len() as u32;
-    let header = unified_header(path);
-    format!(
-        "{header}@@ -{old_start},0 +{new_start},{added_count} @@\n{context}{hunk_body}",
-        old_start = total_lines,
-        new_start = total_lines + 1,
-    )
+    let added_count = lines.len() as u32;
+    format!("{header}@@ -0,0 +1,{added_count} @@\n{hunk_body}{context}")
 }
 
 fn unified_header(path: &Path) -> String {
@@ -105,19 +101,18 @@ mod tests {
     }
 
     #[test]
-    fn append_diff_writes_added_lines() {
+    fn create_file_diff_writes_new_file_hunk() {
         let p = PathBuf::from("a.rs");
-        let src = "alpha\nbeta\n";
-        let d = append_diff(&p, src, "gamma\ndelta\n");
-        assert!(d.starts_with("--- a/a.rs\n+++ b/a.rs\n"));
-        assert!(d.contains("@@ -2,0 +3,2 @@\n+gamma\n+delta\n"));
+        let d = create_file_diff(&p, "alpha\nbeta\n");
+        assert!(d.starts_with("--- /dev/null\n+++ b/a.rs\n"));
+        assert!(d.contains("@@ -0,0 +1,2 @@\n+alpha\n+beta\n"));
     }
 
     #[test]
-    fn append_diff_handles_missing_final_newline() {
+    fn create_file_diff_handles_missing_final_newline() {
         let p = PathBuf::from("a.rs");
-        let src = "alpha\nbeta";
-        let d = append_diff(&p, src, "gamma\n");
+        let d = create_file_diff(&p, "alpha");
         assert!(d.contains("\\ No newline at end of file"));
     }
+
 }

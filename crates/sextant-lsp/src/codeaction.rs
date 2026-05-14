@@ -88,7 +88,7 @@ impl HunkState {
             return Some(());
         }
         if body.starts_with("\\ No newline") {
-            // SARIF-friendly note from `append_diff`. Ignored at edit time.
+            // SARIF-friendly note from `create_file_diff`. Ignored at edit time.
             return Some(());
         }
         None
