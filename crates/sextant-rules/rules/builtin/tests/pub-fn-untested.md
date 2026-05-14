@@ -1,7 +1,7 @@
 ---
 id: builtin.tests.pub-fn-untested
-name: "Public function without an adjacent test"
-description: "Public Rust functions or exported JS/TS declarations whose name is never mentioned in an in-file test body."
+name: "Public function without a test"
+description: "Public Rust functions or exported JS/TS declarations whose name is not mentioned in any in-file or peer-file test."
 severity: info
 category: tests
 scope: file
@@ -13,20 +13,53 @@ enabled: true
 tags: [tests, coverage]
 ---
 
-# Public function without an adjacent test
+# Public function without a test
 
 Flags public-API definitions whose name does not appear in any test
-body within the same file. Severity is `info` — this is a *signal*,
-not a verdict-breaker, because public-API conventions vary across
-projects and most JS/TS projects keep tests in a sibling file.
+body — checked first in the source file itself, then in a small set of
+conventional peer test files sitting next to (or near) the source.
+Severity is `info`: a signal to help focus attention, not a
+verdict-breaker.
 
-The match is intentionally heuristic and same-file only. Tests in a
-sibling `tests/` directory, a separate integration-test crate, or a
-co-located `*.test.ts` / `*.spec.ts` file are not considered.
-(Cross-file detection is on the roadmap once the engine grows a
-repo-scope evaluator API.)
+The rule prefers tests in a peer file — that is the more common
+layout across Rust crates and JS/TS projects — but an in-file
+`#[cfg(test)] mod` (Rust) or in-source Vitest block (JS/TS) is also
+accepted. Both shapes silence the finding.
 
-## Per-language semantics
+## Where the rule looks for tests
+
+### Rust
+
+For source file `<dir>/<stem>.rs`, the rule considers:
+
+1. In-file `#[test]`, `#[tokio::test]`, and any `…::test`-attributed
+   function bodies (including helpers inside a `#[cfg(test)] mod` —
+   those bodies are pulled into the haystack too).
+2. `<dir>/<stem>_tests.rs` — the sibling-file convention used by this
+   workspace and many crates that want tests next to the code without
+   inflating the source file's line count.
+3. `<dir>/tests/<stem>.rs` — a `tests/` directory next to the source.
+4. `<crate-root>/tests/<stem>.rs` — Cargo's integration-test directory
+   at the crate root (found by walking up to the parent of `src/`).
+
+### JavaScript / TypeScript / TSX
+
+For source file `<dir>/<stem>.<ext>`, the rule considers:
+
+1. In-file `describe` / `it` / `test` / `suite` / `context` / `fit` /
+   `fdescribe` callback bodies — including chained forms like
+   `it.skip(…)`, `describe.only(…)`, and `test.each(table)(name, fn)`.
+   This covers Jest, Vitest, Mocha, and Jasmine in-source patterns.
+2. Sibling `<dir>/<stem>.test.<ext>` or `<dir>/<stem>.spec.<ext>`
+   (across `ts`, `tsx`, `js`, `jsx`, `mjs`, `cjs`).
+3. The same two shapes nested under a `__tests__/` directory beside
+   the source.
+
+Matching is a whole-word identifier match against the file's text. The
+peer-file haystack is the raw file contents — no parsing — which keeps
+the check cheap and language-agnostic.
+
+## Per-language definitions
 
 ### Rust
 
@@ -34,11 +67,6 @@ repo-scope evaluator API.)
   `pub(in …)` are excluded — they're internal API.
 - Functions inside a module annotated with `#[cfg(test)]` are excluded
   (they're test helpers, not public surface).
-- "Mentioned in a test" means the function's name appears as a whole
-  word inside a `#[test]`, `#[tokio::test]`, or any
-  `…::test`-attributed function body. Indirect coverage through a
-  helper inside `#[cfg(test)] mod` also counts — those bodies are
-  pulled into the haystack too.
 
 ### JavaScript / TypeScript / TSX
 
@@ -52,20 +80,21 @@ repo-scope evaluator API.)
   exports (`export default () => …`) and re-export lists
   (`export { f } from '…'`) are skipped.
 - Type-only exports (`export type`, `export interface`) are skipped.
-- "Mentioned in a test" means the name appears as a whole word inside
-  a `describe` / `it` / `test` / `suite` / `context` / `fit` /
-  `fdescribe` callback body — including chained forms like
-  `it.skip(…)`, `describe.only(…)`, and `test.each(table)(name, fn)`.
-  This covers Jest, Vitest, Mocha, and Jasmine in-file test patterns.
 
 ## Fixing a finding
 
-- **Add a unit test next to the function.**
+- **Preferred: add a test in a peer file.**
+  - Rust: create `<stem>_tests.rs` next to the source with
+    `use super::*;` and a `#[test]` per public function. The finding's
+    suggested patch creates this file for you.
+  - JS/TS: create `<stem>.test.<ext>` next to the source and import
+    the function from `./<stem>`. The finding's suggested patch
+    creates this file for you (importing from `vitest`).
+- **Also accepted: a test in the same file.**
   - Rust: a `#[cfg(test)] mod tests` at the bottom of the file with a
-    `#[test]` per public function. One focused test is enough.
-  - JS/TS: an in-file `describe`/`it` block (Vitest's in-source
-    testing makes this ergonomic) or a sibling `*.test.ts` /
-    `*.spec.ts` plus a rule override.
+    `#[test]` per public function.
+  - JS/TS: an in-source `describe`/`it` block (Vitest's in-source
+    testing makes this ergonomic).
 - **Reduce visibility.** If the function isn't actually part of the
   public API, drop the `export` keyword (JS/TS) or downgrade to
   `pub(crate)` (Rust).
@@ -75,10 +104,12 @@ repo-scope evaluator API.)
 
 ## Limitations
 
+- Peer-file detection is path-conventional, not import-aware: a test
+  file at an unconventional location (e.g. `spec/foo.ts` next to
+  `src/foo.ts`) will not be discovered.
 - The rule does not understand re-exports — a function tested in a
-  *different* file still triggers a finding here. JS/TS projects that
-  keep tests in `*.test.ts` siblings will see this rule fire often;
-  consider disabling it or scoping it to a `src/` subtree.
+  *different* file (one not on the peer-path list) still triggers a
+  finding here.
 - Renaming a function but not the test that calls it will mask the
   finding until the test is rewritten.
 - Macros that generate tests (Rust's `parameterized!`, JS's custom

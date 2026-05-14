@@ -1,20 +1,19 @@
-//! Flag public-API definitions whose name doesn't appear in any in-file
-//! test body. For Rust this is `pub fn` vs `#[test]` bodies; for
-//! JavaScript/TypeScript it's `export`-ed declarations vs `describe` /
-//! `it` / `test` callback bodies.
+//! Flag public-API definitions whose name doesn't appear in any test
+//! body — either in the same file or in a conventional peer test file
+//! sitting next to the source. The rule prefers peer-file tests (the
+//! more common layout) but accepts in-file tests too.
 //!
 //! Severity is `info` — this is a signal that helps the agent decide
-//! where to focus, not a verdict-breaker. Cross-file detection (tests in
-//! `tests/`, a separate integration crate, or a sibling `*.test.ts`
-//! file) is intentionally out of scope until the engine grows a
-//! repo-scope evaluator API.
+//! where to focus, not a verdict-breaker.
+
+use std::path::{Path, PathBuf};
 
 use sextant_core::{EvalContext, Evaluator, Finding, Rule, SourceFile};
 use sextant_lang::{parse, test_haystack_mentions, test_witness, Language};
 
 use crate::file_length::rule_from_parsed;
 use crate::loader::ParsedRule;
-use crate::patch::append_diff;
+use crate::patch::create_file_diff;
 
 pub struct PubFnUntestedRule {
     rule: Rule,
@@ -34,238 +33,169 @@ impl Evaluator for PubFnUntestedRule {
     }
 
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
-        let Some(hint) = file.language_hint() else {
+        let Some(lang) = supported_language(file) else {
             return Vec::new();
         };
-        let Some(lang) = Language::from_hint(hint) else {
+        let Ok(parsed) = parse(file.contents.clone(), lang) else {
             return Vec::new();
-        };
-        if !matches!(
-            lang,
-            Language::Rust | Language::JavaScript | Language::TypeScript | Language::Tsx
-        ) {
-            return Vec::new();
-        }
-        let parsed = match parse(file.contents.clone(), lang) {
-            Ok(p) => p,
-            Err(_) => return Vec::new(),
         };
         let witness = test_witness(&parsed);
         if witness.pub_fns.is_empty() {
             return Vec::new();
         }
         let path = file.relative_to(ctx.repo_root);
-        let mut out = Vec::new();
-        for pf in &witness.pub_fns {
-            if test_haystack_mentions(&witness.test_haystack, &pf.name) {
-                continue;
-            }
-            let msg = message_for(lang, &pf.name);
-            let mut finding = Finding::new(&self.rule.id, self.rule.severity, path.clone(), msg)
-                .spanning(pf.start_line, pf.end_line);
-            if let Some(stub) = stub_test_block(lang, &pf.name) {
-                finding = finding.with_patch(append_diff(&path, &file.contents, &stub));
-            }
-            out.push(finding);
-        }
-        out
+        let peers = peer_test_files(lang, &file.path);
+        let peer_haystack = read_peer_haystack(&peers);
+        witness
+            .pub_fns
+            .iter()
+            .filter(|pf| !test_haystack_mentions(&witness.test_haystack, &pf.name))
+            .filter(|pf| !test_haystack_mentions(&peer_haystack, &pf.name))
+            .map(|pf| self.build_finding(lang, &path, pf, ctx.repo_root))
+            .collect()
     }
 }
 
-/// Skeleton test block to append at the end of a file. Kept minimal — the
-/// generated test compiles and runs, but `todo!()` (or its equivalent)
-/// forces the author to fill in real coverage rather than rubber-stamp
-/// the rule. Returns `None` for languages where the stub would be more
-/// disruptive than helpful.
-fn stub_test_block(lang: Language, name: &str) -> Option<String> {
+impl PubFnUntestedRule {
+    fn build_finding(
+        &self,
+        lang: Language,
+        path: &Path,
+        pf: &sextant_lang::PubFnInfo,
+        repo_root: &Path,
+    ) -> Finding {
+        let msg = message_for(lang, &pf.name);
+        let mut finding = Finding::new(&self.rule.id, self.rule.severity, path.to_path_buf(), msg)
+            .spanning(pf.start_line, pf.end_line);
+        if let Some((peer_path, stub)) = peer_test_stub(lang, path, &pf.name) {
+            if !repo_root.join(&peer_path).exists() {
+                finding = finding.with_patch(create_file_diff(&peer_path, &stub));
+            }
+        }
+        finding
+    }
+}
+
+fn supported_language(file: &SourceFile) -> Option<Language> {
+    let lang = Language::from_hint(file.language_hint()?)?;
+    matches!(
+        lang,
+        Language::Rust | Language::JavaScript | Language::TypeScript | Language::Tsx
+    )
+    .then_some(lang)
+}
+
+/// Conventional peer test files for a given source file. Returned paths
+/// are absolute (joined onto `src_path`'s parent / ancestors) and may
+/// not exist on disk — the caller is expected to filter via `Path::exists`.
+fn peer_test_files(lang: Language, src_path: &Path) -> Vec<PathBuf> {
+    let Some(parent) = src_path.parent() else {
+        return Vec::new();
+    };
+    let Some(stem) = src_path.file_stem().and_then(|s| s.to_str()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
     match lang {
-        Language::Rust => Some(format!(
-            "\n#[cfg(test)]\nmod {name}_tests {{\n    use super::*;\n\n    #[test]\n    fn {name}_smoke() {{\n        // TODO: exercise `{name}` and assert its behaviour.\n        let _ = {name};\n    }}\n}}\n"
-        )),
-        Language::JavaScript | Language::TypeScript | Language::Tsx => Some(format!(
-            "\nif (import.meta.vitest) {{\n    const {{ describe, it, expect }} = import.meta.vitest;\n    describe('{name}', () => {{\n        it('is exercised', () => {{\n            // TODO: exercise `{name}` and assert its behaviour.\n            expect({name}).toBeDefined();\n        }});\n    }});\n}}\n"
-        )),
+        Language::Rust => {
+            out.push(parent.join(format!("{stem}_tests.rs")));
+            out.push(parent.join("tests").join(format!("{stem}.rs")));
+            // Walk up to the crate root (parent of `src/`) and try
+            // `tests/<stem>.rs` — Cargo's integration-test convention.
+            let mut cursor = parent;
+            while let Some(p) = cursor.parent() {
+                if cursor.file_name().and_then(|n| n.to_str()) == Some("src") {
+                    out.push(p.join("tests").join(format!("{stem}.rs")));
+                    break;
+                }
+                cursor = p;
+            }
+        }
+        Language::JavaScript | Language::TypeScript | Language::Tsx => {
+            let exts = ["ts", "tsx", "js", "jsx", "mjs", "cjs"];
+            for ext in exts {
+                out.push(parent.join(format!("{stem}.test.{ext}")));
+                out.push(parent.join(format!("{stem}.spec.{ext}")));
+                out.push(parent.join("__tests__").join(format!("{stem}.test.{ext}")));
+                out.push(parent.join("__tests__").join(format!("{stem}.spec.{ext}")));
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// Read all existing peer files and concatenate their contents into a
+/// single haystack for whole-word identifier matching.
+fn read_peer_haystack(peers: &[PathBuf]) -> String {
+    let mut out = String::new();
+    for p in peers {
+        if let Ok(contents) = std::fs::read_to_string(p) {
+            out.push_str(&contents);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// Build a `(peer_path, peer_contents)` pair for a fresh peer test
+/// file. The peer path is the conventional sibling location for `lang`
+/// (`<stem>_tests.rs` for Rust, `<stem>.test.<ext>` for JS/TS). Returns
+/// `None` for unsupported languages or when the source path can't be
+/// decomposed into parent + stem.
+fn peer_test_stub(lang: Language, src_path: &Path, name: &str) -> Option<(PathBuf, String)> {
+    let parent = src_path.parent()?;
+    let stem = src_path.file_stem()?.to_str()?;
+    match lang {
+        Language::Rust => Some(rust_peer_stub(parent, stem, name)),
+        Language::JavaScript | Language::TypeScript | Language::Tsx => {
+            Some(js_peer_stub(lang, parent, stem, name))
+        }
         _ => None,
     }
+}
+
+fn rust_peer_stub(parent: &Path, stem: &str, name: &str) -> (PathBuf, String) {
+    let peer = parent.join(format!("{stem}_tests.rs"));
+    let body = format!(
+        "use super::*;\n\n#[test]\nfn {name}_smoke() {{\n    // TODO: exercise `{name}` and assert its behaviour.\n    let _ = {name};\n}}\n"
+    );
+    (peer, body)
+}
+
+fn js_peer_stub(lang: Language, parent: &Path, stem: &str, name: &str) -> (PathBuf, String) {
+    let ext = match lang {
+        Language::TypeScript => "ts",
+        Language::Tsx => "tsx",
+        _ => "js",
+    };
+    let peer = parent.join(format!("{stem}.test.{ext}"));
+    let body = format!(
+        "import {{ describe, it, expect }} from 'vitest';\nimport {{ {name} }} from './{stem}';\n\ndescribe('{name}', () => {{\n    it('is exercised', () => {{\n        // TODO: exercise `{name}` and assert its behaviour.\n        expect({name}).toBeDefined();\n    }});\n}});\n"
+    );
+    (peer, body)
 }
 
 fn message_for(lang: Language, name: &str) -> String {
     match lang {
         Language::Rust => format!(
-            "Public function `{name}` is not referenced by any `#[test]` in this file. \
-             Add a unit test or reduce visibility to `pub(crate)`."
+            "Public function `{name}` is not referenced by any `#[test]` in this file or a peer \
+             test file (`<stem>_tests.rs` sibling or `tests/<stem>.rs`). Prefer adding the test \
+             in a peer file; an in-file `#[cfg(test)] mod` is also fine. Or reduce visibility to \
+             `pub(crate)`."
         ),
         Language::JavaScript | Language::TypeScript | Language::Tsx => format!(
-            "Exported `{name}` is not referenced by any `describe`/`it`/`test` block \
-             in this file. Add an in-file test or drop the `export`."
+            "Exported `{name}` is not referenced by any `describe`/`it`/`test` block in this file \
+             or a peer test file (sibling `*.test.*` / `*.spec.*`, or one under `__tests__/`). \
+             Prefer adding the test in a peer file; an in-file Vitest block is also fine. Or drop \
+             the `export`."
         ),
-        _ => format!("Public `{name}` is not referenced by any test in this file."),
+        _ => format!(
+            "Public `{name}` is not referenced by any test in this file or a peer test file."
+        ),
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::loader::parse_rule_md;
-    use sextant_core::{RuleSource, Severity};
-
-    fn parsed_for_test() -> ParsedRule {
-        parse_rule_md(
-            r#"---
-id: builtin.tests.pub-fn-untested
-name: "Public function without test"
-description: "x"
-severity: info
-category: tests
-scope: file
-languages: [rust, javascript, typescript, tsx]
-evaluator: { type: builtin, name: pub_fn_untested }
----
-"#,
-            RuleSource::Builtin,
-            None,
-        )
-        .unwrap()
-    }
-
-    fn evaluate(path: &str, src: &str) -> Vec<Finding> {
-        let rule = PubFnUntestedRule::from_parsed(parsed_for_test());
-        let file = SourceFile::new(path, src);
-        let root = std::env::current_dir().unwrap();
-        rule.evaluate_file(&file, &EvalContext { repo_root: &root })
-    }
-
-    #[test]
-    fn flags_pub_fn_with_no_test() {
-        let f = evaluate("a.rs", "pub fn lonely() {}\n");
-        assert_eq!(f.len(), 1, "{f:?}");
-        assert_eq!(f[0].severity, Severity::Info);
-        assert!(f[0].message.contains("lonely"));
-    }
-
-    #[test]
-    fn rust_finding_carries_stub_test_patch() {
-        let f = evaluate("a.rs", "pub fn lonely() {}\n");
-        let patch = f[0].patch.as_deref().expect("expected stub patch");
-        assert!(patch.contains("--- a/a.rs"));
-        assert!(patch.contains("mod lonely_tests"));
-        assert!(patch.contains("#[test]"));
-    }
-
-    #[test]
-    fn js_finding_carries_vitest_stub_patch() {
-        let f = evaluate("a.ts", "export function lonely() {}\n");
-        let patch = f[0].patch.as_deref().expect("expected stub patch");
-        assert!(patch.contains("import.meta.vitest"));
-        assert!(patch.contains("describe('lonely'"));
-    }
-
-    #[test]
-    fn quiet_when_test_mentions_fn() {
-        let src = r#"
-pub fn add(a: i32, b: i32) -> i32 { a + b }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn add_works() { assert_eq!(add(1, 2), 3); }
-}
-"#;
-        assert!(evaluate("a.rs", src).is_empty());
-    }
-
-    #[test]
-    fn ignores_unsupported_languages() {
-        assert!(evaluate("a.py", "def f(): pass\n").is_empty());
-        assert!(evaluate("a.go", "package x\nfunc F() {}\n").is_empty());
-    }
-
-    #[test]
-    fn ignores_pub_crate() {
-        assert!(evaluate("a.rs", "pub(crate) fn internal() {}\n").is_empty());
-    }
-
-    #[test]
-    fn ignores_pub_fns_in_cfg_test_mod() {
-        let src = r#"
-#[cfg(test)]
-mod tests {
-    pub fn helper() {}
-    #[test]
-    fn t() { helper(); }
-}
-"#;
-        assert!(evaluate("a.rs", src).is_empty());
-    }
-
-    #[test]
-    fn flags_each_untested_fn() {
-        let src = r#"
-pub fn one() {}
-pub fn two() {}
-pub fn three() {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn t() { two(); }
-}
-"#;
-        let f = evaluate("a.rs", src);
-        let names: Vec<_> = f
-            .iter()
-            .filter_map(|x| x.message.split('`').nth(1))
-            .collect();
-        assert_eq!(names, vec!["one", "three"]);
-    }
-
-    #[test]
-    fn js_flags_exported_fn_with_no_test() {
-        let f = evaluate("a.js", "export function lonely() {}\n");
-        assert_eq!(f.len(), 1, "{f:?}");
-        assert_eq!(f[0].severity, Severity::Info);
-        assert!(f[0].message.contains("lonely"));
-        assert!(f[0].message.contains("describe"));
-    }
-
-    #[test]
-    fn js_quiet_when_describe_mentions_fn() {
-        let src = "export function add(a, b) { return a + b; }\n\
-                   describe('add', () => {\n\
-                     it('sums', () => { expect(add(1, 2)).toBe(3); });\n\
-                   });\n";
-        assert!(evaluate("a.js", src).is_empty());
-    }
-
-    #[test]
-    fn js_ignores_non_exported_top_level_fn() {
-        assert!(evaluate("a.js", "function privateFn() {}\n").is_empty());
-    }
-
-    #[test]
-    fn ts_flags_exported_arrow_with_no_test() {
-        let f = evaluate(
-            "a.ts",
-            "export const square = (x: number): number => x * x;\n",
-        );
-        assert_eq!(f.len(), 1, "{f:?}");
-        assert!(f[0].message.contains("square"));
-    }
-
-    #[test]
-    fn ts_quiet_when_test_mentions_fn() {
-        let src = "export const square = (x: number): number => x * x;\n\
-                   test('square', () => { expect(square(3)).toBe(9); });\n";
-        assert!(evaluate("a.ts", src).is_empty());
-    }
-
-    #[test]
-    fn tsx_flags_untested_exported_component() {
-        let src = "export const Hello = ({ name }: { name: string }) => <div>Hi {name}</div>;\n";
-        let f = evaluate("a.tsx", src);
-        assert_eq!(f.len(), 1, "{f:?}");
-        assert!(f[0].message.contains("Hello"));
-    }
-}
+#[path = "pub_fn_test_tests.rs"]
+mod tests;
