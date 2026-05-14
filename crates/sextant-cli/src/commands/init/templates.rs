@@ -79,14 +79,13 @@ languages: [rust, python, go, java, typescript, tsx, javascript]
 evaluator:
   type: regex
   pattern: "TODO"
-  exclude_paths: ["**/tests/**", "**/*_test.*"]
 enabled: true
 tags: [style]
 ---
 
 # No TODO comments
 
-Flags any line containing the word `TODO` outside of test files.
+Flags any line containing the word `TODO`.
 
 ## Why
 
@@ -113,16 +112,14 @@ languages: [rust]
 evaluator:
   type: regex
   pattern: '\.(unwrap|expect)\s*\('
-  exclude_paths: ["**/tests/**", "**/*_test.rs", "**/build.rs", "**/examples/**"]
 enabled: true
 tags: [rust, panics]
 ---
 
 # No unwrap() in prod
 
-Match any `.unwrap()` or `.expect(...)` outside tests, build scripts,
-and examples. These panic on `Err`/`None` — fine for tests, dangerous
-for code on a request path.
+Match any `.unwrap()` or `.expect(...)` call. These panic on `Err`/`None` —
+dangerous on a request path.
 
 ## Fixing
 
@@ -146,7 +143,6 @@ languages: [python]
 evaluator:
   type: regex
   pattern: '^\s*print\s*\('
-  exclude_paths: ["**/tests/**", "**/scripts/**", "**/examples/**"]
 enabled: true
 tags: [python, logging]
 ---
@@ -160,9 +156,6 @@ destination control. Use the project's logger.
 
 - `import logging` once at module top, then `logging.info(...)`,
   `logging.warning(...)`, etc. Match the level to the actual severity.
-- For CLI tools that print results to stdout, suppress this rule on
-  the entry-point file by adding it to `exclude_paths` in your repo
-  override of this rule.
 "#,
 );
 
@@ -179,7 +172,6 @@ languages: [go]
 evaluator:
   type: regex
   pattern: '\bfmt\.(Print|Println|Printf)\s*\('
-  exclude_paths: ["**/cmd/**", "**/examples/**", "**/*_test.go", "**/main.go"]
 enabled: true
 tags: [go, logging]
 ---
@@ -192,8 +184,6 @@ infrastructure. They show up unfiltered in CI and on production stdout.
 ## Fixing
 
 - Use `slog.Info` / `slog.Error` (Go 1.21+) or your project's logger.
-- For CLI tools, the rule already excludes `cmd/`, `examples/`, and
-  `main.go`. Extend `exclude_paths` if you have other entry points.
 "#,
 );
 
@@ -210,7 +200,6 @@ languages: [java]
 evaluator:
   type: regex
   pattern: '\bSystem\.(out|err)\.(println|print|printf)\s*\('
-  exclude_paths: ["**/test/**", "**/*Test.java", "**/Main.java", "**/examples/**"]
 enabled: true
 tags: [java, logging]
 ---
@@ -224,8 +213,6 @@ make it impossible to filter by level, and don't carry MDC context.
 
 - Use SLF4J: `private static final Logger log =
   LoggerFactory.getLogger(MyClass.class);`, then `log.info(...)`.
-- For one-off `Main`-style entry points, the rule excludes `Main.java`
-  by default. Extend `exclude_paths` for other entry points.
 "#,
 );
 
@@ -242,7 +229,6 @@ languages: [typescript, tsx, javascript]
 evaluator:
   type: regex
   pattern: '\bconsole\.(log|info|warn|error|debug)\s*\('
-  exclude_paths: ["**/test/**", "**/tests/**", "**/*.test.*", "**/*.spec.*", "**/scripts/**"]
 enabled: true
 tags: [typescript, javascript, logging]
 ---
@@ -257,9 +243,5 @@ unfiltered in production stdout/stderr and don't carry trace context.
 
 - Use the project's logger — `pino`, `winston`, `bunyan`, the
   `@opentelemetry/*` logger, or whatever the codebase has standardised on.
-- For genuine CLI output (where stdout *is* the deliverable), the rule
-  already excludes `scripts/`. Extend `exclude_paths` for other
-  CLI-style entry points.
-- Tests are excluded by default — `**/*.test.*` and `**/*.spec.*`.
 "#,
 );

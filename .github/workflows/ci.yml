@@ -23,11 +23,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # `actions-rust-lang/setup-rust-toolchain` is the maintained successor
+      # to `dtolnay/rust-toolchain`. It handles the macOS runner case where
+      # the pre-installed `cargo` is actually a `rustup-init` stub that
+      # shadows the real toolchain, and it bundles `Swatinem/rust-cache`
+      # so we don't need to wire it up separately.
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
+          toolchain: stable
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
+      # Fail loudly if the toolchain didn't install cleanly. Without this,
+      # a broken shim produces opaque errors like `unexpected argument 'test'`
+      # from `rustup-init` when `cargo test` runs.
+      - name: Verify toolchain
+        run: |
+          cargo --version
+          rustc --version
+          rustup show active-toolchain
 
       - name: cargo fmt
         if: matrix.os == 'ubuntu-latest'

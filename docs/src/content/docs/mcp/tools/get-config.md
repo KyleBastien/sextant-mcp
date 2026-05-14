@@ -6,8 +6,7 @@ sidebar:
 ---
 
 Return the resolved Sextant configuration — verdict thresholds,
-size-rule limits, complexity limits, path excludes, judge settings —
-as JSON.
+size-rule limits, complexity limits, judge settings — as JSON.
 
 Use this to debug why a rule is firing (or being skipped), or to
 confirm a config edit was picked up.
@@ -48,9 +47,6 @@ A JSON object reflecting the merged config: defaults overlaid by
 	"duplication": {
 		"min_tokens": 100
 	},
-	"paths": {
-		"exclude": ["*.pb.go", "vendor/"]
-	},
 	"judge": {
 		"enabled": true,
 		"provider": "anthropic",
@@ -67,8 +63,9 @@ is what the engine will actually use.
 
 ## When to call
 
-- "Why didn't this finding fire?" — check `paths.exclude` and
-  thresholds.
+- "Why didn't this finding fire?" — check thresholds; remember the
+  hardcoded skip list never grades `target/`, `node_modules/`,
+  lockfiles, or `.git/`.
 - After editing `config.toml` — confirm the change is loaded.
 - When walking an unfamiliar repo — see what thresholds it ships.
 

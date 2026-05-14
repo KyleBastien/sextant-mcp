@@ -47,10 +47,6 @@ nesting_error = 6
 [duplication]
 min_tokens = 100
 
-# Path excludes — applied to every rule.
-[paths]
-exclude = ["*.pb.go", "vendor/", "**/generated/**"]
-
 # LLM-evaluator config.
 [judge]
 enabled = true
@@ -71,28 +67,20 @@ cache_dir = ".sextant/cache/llm"
 | [`[duplication]`](/sextant-mcp/configuration/duplication/) | Token-duplication detection. |
 | [`[judge]`](/sextant-mcp/configuration/judge/) | LLM provider config for `llm`-evaluated rules. |
 
-## Globally excluded paths
+## Skipped paths
 
-`[paths] exclude` is a list of glob patterns applied to every rule
-before findings are produced. Use it for vendored or generated code
-that should never be graded.
+Sextant never grades generated or vendored files. The skip list is
+hardcoded into the engine — there is no `[paths]` section to edit:
 
-```toml
-[paths]
-exclude = [
-  "*.pb.go",
-  "vendor/",
-  "**/generated/**",
-  "node_modules/**",
-  "target/**",
-]
-```
+- `**/Cargo.lock`, `**/package-lock.json`, `**/yarn.lock`,
+  `**/pnpm-lock.yaml`, `**/poetry.lock`, `**/uv.lock`
+- `**/target/**`, `**/node_modules/**`, `**/dist/**`, `**/build/**`
+- `**/.git/**`, `**/.sextant/cache/**`
 
-The glob syntax is the same as `.gitignore`'s. Patterns are evaluated
-relative to the repo root.
-
-Per-rule excludes (`evaluator.exclude_paths` on regex / LLM rules)
-are applied on top of these.
+Hiding source from a rule by excluding paths is intentionally not
+supported. If a rule fires on code that legitimately shouldn't trigger
+it, fix the rule (refine its pattern, add a `not_under` ancestor check
+on AST rules) rather than carving out a hole.
 
 ## Inspecting the resolved config
 

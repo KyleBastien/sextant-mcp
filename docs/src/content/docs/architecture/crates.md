@@ -24,8 +24,10 @@ it cheap to test.
 
 Reads `.sextant/config.toml` into typed structs and merges with
 defaults. Returns the resolved config the engine runs with. Also
-hosts the `[paths] exclude` glob compiler — every crate that walks
-files asks this crate which files to skip.
+hosts the hardcoded skip list (generated artifacts: `Cargo.lock`,
+`target/`, `node_modules/`, `.git/`, …) — every crate that walks
+files asks this crate which paths to skip. The list is not
+user-configurable.
 
 ## `sextant-rules`
 

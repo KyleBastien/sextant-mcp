@@ -70,15 +70,12 @@ pub struct ParsedRule {
 pub enum EvaluatorSpec {
     /// Dispatches to a Rust evaluator by registry name.
     Builtin { name: String },
-    /// A line-by-line regex match. `exclude_paths` are GlobSet patterns
-    /// applied before evaluation. `replacement`, when set, drives a
+    /// A line-by-line regex match. `replacement`, when set, drives a
     /// proposed-fix unified diff: each match's text is rewritten via the
     /// regex crate's replace syntax (`$1`, named captures, etc.) and the
     /// resulting line replaces the original.
     Regex {
         pattern: String,
-        #[serde(default)]
-        exclude_paths: Vec<String>,
         #[serde(default)]
         replacement: Option<String>,
     },
@@ -95,8 +92,6 @@ pub enum EvaluatorSpec {
         max_tokens: Option<u32>,
         #[serde(default)]
         temperature: Option<f32>,
-        #[serde(default)]
-        exclude_paths: Vec<String>,
     },
     /// Tree-sitter-query rule. The query is compiled per language listed in
     /// `languages:`; matches anchored on `capture` (or the first capture)
@@ -110,8 +105,6 @@ pub enum EvaluatorSpec {
         message: Option<String>,
         #[serde(default)]
         not_under: Vec<String>,
-        #[serde(default)]
-        exclude_paths: Vec<String>,
     },
 }
 
