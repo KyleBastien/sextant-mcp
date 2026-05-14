@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use globset::GlobSet;
 use ignore::WalkBuilder;
 use serde::Serialize;
-use sextant_config::{Config, ConfigError};
+use sextant_config::{default_exclude_matcher, Config, ConfigError};
 use sextant_core::{
     Category, EvalContext, Finding, Report, Rule, RuleSource, Scope, Severity, SourceFile,
     VerdictThresholds,
@@ -82,7 +82,7 @@ pub fn grade_with(
     opts: GradeOptions,
 ) -> Result<Report, EngineError> {
     let config = Config::from_repo_root(repo_root)?;
-    let exclude = config.paths.matcher().map_err(EngineError::Config)?;
+    let exclude = default_exclude_matcher().map_err(EngineError::Config)?;
     let judge = judge_setup::build_judge(repo_root, &config, &opts);
     let ruleset = RuleSet::load_with(repo_root, &config, judge.clone())?;
     let ctx = EvalContext { repo_root };
@@ -142,15 +142,16 @@ fn collect_rules(ruleset: &RuleSet) -> HashMap<String, Rule> {
 /// public functions across crates) won't fire because only one file is in
 /// scope; on-save flows can still call `grade_with` for the full tree.
 ///
-/// Files matched by the config's `paths` exclude globs return an empty
-/// report so editor diagnostics line up with what the CLI would have done.
+/// Files matched by the built-in skip list (generated artifacts like
+/// `Cargo.lock`, `target/`, `node_modules/`) return an empty report so
+/// editor diagnostics line up with what the CLI would have done.
 pub fn grade_file_buffer(
     repo_root: &Path,
     file: SourceFile,
     opts: GradeOptions,
 ) -> Result<Report, EngineError> {
     let config = Config::from_repo_root(repo_root)?;
-    let exclude = config.paths.matcher().map_err(EngineError::Config)?;
+    let exclude = default_exclude_matcher().map_err(EngineError::Config)?;
     let rel = file
         .path
         .strip_prefix(repo_root)

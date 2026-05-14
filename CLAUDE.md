@@ -47,8 +47,7 @@ Practical consequence: if you add a finding while editing, the loop will not let
 
 Escape hatches (use sparingly): `SEXTANT_DISABLE_POST_EDIT=1`, `SEXTANT_DISABLE_STOP=1`, `SEXTANT_DISABLE_SESSION_START=1`.
 
-**Never silence a finding instead of fixing it.** Sextant has no exemption mechanism by design. When the gate fires, the response is to fix the underlying issue — refactor, drop an unused export, write the missing test, raise visibility, split a too-long file. Specifically forbidden:
-- Adding paths to `[paths.exclude]` to hide findings (the exclude list is for generated artifacts like `target/`, not for source the rule legitimately covers).
+**Never silence a finding instead of fixing it.** Sextant has no exemption mechanism by design — there is no `[paths.exclude]` config and no per-rule `exclude_paths` frontmatter; the skip list (generated artifacts: `Cargo.lock`, `target/`, `node_modules/`, `.git/`) is hardcoded into `sextant-config`. When the gate fires, the response is to fix the underlying issue — refactor, drop an unused export, write the missing test, raise visibility, split a too-long file. Specifically forbidden:
 - Lowering thresholds in `.sextant/config.toml` (raising `max_errors`/`max_warns`/`max_info`, or relaxing per-rule limits in `[size]`/`[complexity]`/`[duplication]`) to let a finding through.
 - Editing rule frontmatter to downgrade severity below the threshold.
 - Disabling the post-edit/stop hooks via the escape-hatch env vars to ship without grading.
@@ -64,7 +63,7 @@ Nine crates in `crates/`, layered. Edit at the lowest layer that owns the concep
 ```
 sextant-core      data model only — Rule, Finding, Report, Verdict, Evaluator trait,
                   SourceFile, VerdictThresholds. No I/O, no logging.
-sextant-config    TOML loader (`.sextant/config.toml`) + path-exclude globs.
+sextant-config    TOML loader (`.sextant/config.toml`) + hardcoded skip-list globs.
 sextant-lang      tree-sitter parsers (rust, python, go, java, ts/tsx, js).
 sextant-diff      git diff acquisition via git2: BaseSpec/HeadSpec → DiffSet
                   (changed_lines per file). `BaseSpec::Auto` = merge-base with

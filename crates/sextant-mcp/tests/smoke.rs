@@ -194,8 +194,8 @@ fn explain_rule_unknown_id_returns_is_error() {
 fn grade_files_tool_returns_report() {
     let dir = tempdir().unwrap();
     let root = dir.path();
-    // Make sure the path-exclude defaults don't drop our fixture; we use .rs
-    // which isn't on the exclude list.
+    // Use `.rs` so the built-in skip list (target/, node_modules/, lockfiles)
+    // doesn't drop our fixture.
     std::fs::write(root.join("a.rs"), "fn ok() {}\n").unwrap();
 
     let mut server = Server::spawn(root);

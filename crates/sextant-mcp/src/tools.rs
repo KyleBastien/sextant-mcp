@@ -116,7 +116,7 @@ fn descriptor_explain_rule() -> Value {
 fn descriptor_get_config() -> Value {
     json!({
         "name": "get_config",
-        "description": "Return the resolved Sextant configuration as JSON — verdict thresholds, size-rule limits, path excludes. Use this to debug why a rule is firing or being skipped.",
+        "description": "Return the resolved Sextant configuration as JSON — verdict thresholds, size-rule limits, judge settings. Use this to debug why a rule is firing or being skipped.",
         "inputSchema": { "type": "object", "properties": {} }
     })
 }

@@ -1,4 +1,3 @@
-use globset::{Glob, GlobSet, GlobSetBuilder};
 use regex::Regex;
 use sextant_core::{EvalContext, Evaluator, Finding, Rule, SourceFile};
 
@@ -8,7 +7,6 @@ use crate::patch::replace_line_diff;
 pub struct RegexRule {
     rule: Rule,
     re: Regex,
-    exclude: GlobSet,
     /// Replacement template using regex-crate substitution syntax (e.g.
     /// `$1`, `$name`). When set, every match yields a unified-diff patch
     /// that rewrites that match in place on the affected line.
@@ -19,7 +17,6 @@ impl RegexRule {
     pub fn from_parsed(
         parsed: ParsedRule,
         pattern: &str,
-        exclude_paths: &[String],
         replacement: Option<&str>,
     ) -> RegexBuildResult {
         let re = match Regex::new(pattern) {
@@ -31,18 +28,6 @@ impl RegexRule {
                 });
             }
         };
-        let mut builder = GlobSetBuilder::new();
-        for p in exclude_paths {
-            let glob = Glob::new(p).map_err(|source| RegexBuildError::Glob {
-                pattern: p.clone(),
-                source,
-            })?;
-            builder.add(glob);
-        }
-        let exclude = builder.build().map_err(|source| RegexBuildError::Glob {
-            pattern: "<set>".into(),
-            source,
-        })?;
 
         let rule = Rule {
             id: parsed.id,
@@ -60,7 +45,6 @@ impl RegexRule {
         Ok(Self {
             rule,
             re,
-            exclude,
             replacement: replacement.map(str::to_string),
         })
     }
@@ -76,12 +60,6 @@ pub enum RegexBuildError {
         #[source]
         source: regex::Error,
     },
-    #[error("invalid glob `{pattern}`: {source}")]
-    Glob {
-        pattern: String,
-        #[source]
-        source: globset::Error,
-    },
 }
 
 impl Evaluator for RegexRule {
@@ -91,9 +69,6 @@ impl Evaluator for RegexRule {
 
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
         let rel = file.relative_to(ctx.repo_root);
-        if self.exclude.is_match(&rel) {
-            return Vec::new();
-        }
         let mut out = Vec::new();
         for (i, line) in file.contents.lines().enumerate() {
             let cursor = LineCursor {
@@ -177,11 +152,11 @@ mod tests {
         EvalContext { repo_root: root }
     }
 
-    fn build(pat: &str, exclude: &[&str]) -> RegexRule {
-        build_with(pat, exclude, None)
+    fn build(pat: &str) -> RegexRule {
+        build_with(pat, None)
     }
 
-    fn build_with(pat: &str, exclude: &[&str], replacement: Option<&str>) -> RegexRule {
+    fn build_with(pat: &str, replacement: Option<&str>) -> RegexRule {
         let parsed = parse_rule_md(
             r#"---
 id: test.todo
@@ -196,13 +171,12 @@ evaluator: { type: regex, pattern: "TODO" }
             None,
         )
         .unwrap();
-        let exclude: Vec<String> = exclude.iter().map(|s| s.to_string()).collect();
-        RegexRule::from_parsed(parsed, pat, &exclude, replacement).unwrap()
+        RegexRule::from_parsed(parsed, pat, replacement).unwrap()
     }
 
     #[test]
     fn fires_on_match_with_line_number() {
-        let rule = build(r"TODO", &[]);
+        let rule = build(r"TODO");
         let file = SourceFile::new("a.rs", "fn ok() {}\n// TODO: refactor\nfn x() {}\n");
         let root = std::env::current_dir().unwrap();
         let f = rule.evaluate_file(&file, &ctx(&root));
@@ -213,7 +187,7 @@ evaluator: { type: regex, pattern: "TODO" }
 
     #[test]
     fn replacement_attaches_unified_diff_patch() {
-        let rule = build_with(r"\bvar\b", &[], Some("let"));
+        let rule = build_with(r"\bvar\b", Some("let"));
         let file = SourceFile::new("a.ts", "var x = 1;\nlet y = 2;\n");
         let root = std::env::current_dir().unwrap();
         let f = rule.evaluate_file(&file, &ctx(&root));
@@ -226,27 +200,10 @@ evaluator: { type: regex, pattern: "TODO" }
 
     #[test]
     fn no_replacement_means_no_patch() {
-        let rule = build(r"TODO", &[]);
+        let rule = build(r"TODO");
         let file = SourceFile::new("a.rs", "// TODO\n");
         let root = std::env::current_dir().unwrap();
         let f = rule.evaluate_file(&file, &ctx(&root));
         assert!(f[0].patch.is_none());
-    }
-
-    #[test]
-    fn skips_excluded_paths() {
-        let rule = build(r"TODO", &["**/tests/**"]);
-        let mut file = SourceFile::new(
-            std::env::current_dir().unwrap().join("tests/foo.rs"),
-            "// TODO\n",
-        );
-        // adjust path so the relative form starts with `tests/`
-        file.path = std::env::current_dir()
-            .unwrap()
-            .join("tests")
-            .join("foo.rs");
-        let root = std::env::current_dir().unwrap();
-        let f = rule.evaluate_file(&file, &ctx(&root));
-        assert!(f.is_empty());
     }
 }

@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sextant_config::Config;
+use sextant_config::{default_exclude_matcher, Config};
 use sextant_core::{
     BaselineDelta, EvalContext, Finding, Report, SourceFile, Verdict, VerdictThresholds,
 };
@@ -55,7 +55,7 @@ pub fn grade_pr(
     opts: PrOptions,
 ) -> Result<PrReport, EngineError> {
     let config = Config::from_repo_root(repo_root)?;
-    let exclude = config.paths.matcher().map_err(EngineError::Config)?;
+    let exclude = default_exclude_matcher().map_err(EngineError::Config)?;
     let judge = judge_setup::build_judge(repo_root, &config, &opts.grade);
     let ruleset = RuleSet::load_with(repo_root, &config, judge)?;
     let ctx = EvalContext { repo_root };

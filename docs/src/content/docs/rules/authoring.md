@@ -30,7 +30,6 @@ languages: [rust, python]          # omit = all languages
 evaluator:                         # see below
   type: regex
   pattern: '\bTODO\b'
-  exclude_paths: ["**/tests/**"]
 enabled: true                      # default true
 overrides: []                      # rule ids this rule disables
 tags: [style, todo]
@@ -59,13 +58,12 @@ tags: [style, todo]
 evaluator:
   type: regex
   pattern: '\.unwrap\('
-  exclude_paths: ["**/tests/**", "**/*_test.rs"]
 ```
 
 | Field | Required | Notes |
 |---|---|---|
 | `pattern` | yes | Standard Rust regex. Matched per line. |
-| `exclude_paths` | no | Glob patterns that skip files. |
+| `replacement` | no | Regex-crate replacement template. When set, each match emits a unified-diff patch rewriting the line. |
 
 Cheapest authoring option. The regex runs against each line of each
 file in scope; every match is one finding pointing at that line.
@@ -84,7 +82,6 @@ evaluator:
   capture: t
   message: "no `any` allowed"
   not_under: [catch_clause]
-  exclude_paths: ["**/dist/**"]
 ```
 
 | Field | Required | Notes |
@@ -93,7 +90,6 @@ evaluator:
 | `capture` | no | Capture name to anchor the finding line. Defaults to the first capture. |
 | `message` | no | Override message. Defaults to `<rule.name>: matched <snippet>`. |
 | `not_under` | no | Drop a match if any ancestor's node kind is in this list. |
-| `exclude_paths` | no | Glob patterns that skip files. |
 
 `ast` rules **require** at least one language in `languages:`. The
 same query string is compiled once per listed language, so you can
@@ -108,7 +104,6 @@ evaluator:
   model: claude-sonnet-4-6        # optional; falls back to [judge].model
   max_tokens: 1024                # optional
   temperature: 0.0                # optional
-  exclude_paths: ["**/tests/**"]
 ```
 
 The rule body is the prompt. Placeholders `{{path}}`, `{{code}}`, and
@@ -165,13 +160,13 @@ built-in is replaced by an inert rule.
 
 ## Examples
 
-### "No `unwrap()` outside tests"
+### "No `unwrap()`"
 
 ```yaml
 ---
 id: project.no-unwrap
-name: "No unwrap() in production code"
-description: "Forbid .unwrap() outside test files."
+name: "No unwrap()"
+description: "Forbid .unwrap() in production code."
 severity: warn
 category: reliability
 scope: file
@@ -179,11 +174,10 @@ languages: [rust]
 evaluator:
   type: regex
   pattern: '\.unwrap\('
-  exclude_paths: ["**/tests/**", "**/*_test.rs", "**/benches/**"]
 tags: [rust, panics]
 ---
 
-# No unwrap() in production code
+# No unwrap()
 
 `.unwrap()` panics on `None` / `Err`. In production code that's
 almost always a bug — the program crashes instead of handling the
@@ -211,7 +205,6 @@ languages: [rust]
 evaluator:
   type: llm
   model: claude-sonnet-4-6
-  exclude_paths: ["**/tests/**", "**/*_test.rs"]
 ---
 
 # Public API needs a comment

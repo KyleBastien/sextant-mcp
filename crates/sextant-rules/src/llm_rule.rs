@@ -7,7 +7,6 @@
 
 use std::sync::Arc;
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
 use sextant_core::{EvalContext, Evaluator, Finding, Rule, Severity, SourceFile};
 use sextant_judge::{Judge, JudgeRequest, JudgeSeverity};
 
@@ -21,14 +20,12 @@ pub struct LlmRule {
     model: String,
     max_tokens: u32,
     temperature: f32,
-    exclude: GlobSet,
 }
 
 pub struct LlmRuleSpec {
     pub model: String,
     pub max_tokens: u32,
     pub temperature: f32,
-    pub exclude_paths: Vec<String>,
 }
 
 impl LlmRule {
@@ -37,14 +34,12 @@ impl LlmRule {
         judge: Arc<Judge>,
         spec: LlmRuleSpec,
     ) -> Result<Self, RegexBuildError> {
-        let exclude = build_globset(&spec.exclude_paths)?;
         Ok(Self {
             rule: rule_from_parsed(parsed),
             judge,
             model: spec.model,
             max_tokens: spec.max_tokens,
             temperature: spec.temperature,
-            exclude,
         })
     }
 
@@ -60,21 +55,6 @@ impl LlmRule {
     }
 }
 
-fn build_globset(patterns: &[String]) -> Result<GlobSet, RegexBuildError> {
-    let mut b = GlobSetBuilder::new();
-    for p in patterns {
-        let glob = Glob::new(p).map_err(|source| RegexBuildError::Glob {
-            pattern: p.clone(),
-            source,
-        })?;
-        b.add(glob);
-    }
-    b.build().map_err(|source| RegexBuildError::Glob {
-        pattern: "<set>".into(),
-        source,
-    })
-}
-
 impl Evaluator for LlmRule {
     fn rule(&self) -> &Rule {
         &self.rule
@@ -82,9 +62,6 @@ impl Evaluator for LlmRule {
 
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
         let rel = file.relative_to(ctx.repo_root);
-        if self.exclude.is_match(&rel) {
-            return Vec::new();
-        }
         let prompt = self.render(file, &rel);
         let req = JudgeRequest {
             system_prompt: None,
@@ -187,7 +164,6 @@ evaluator: {{ type: llm }}
                 model: "fake-1".into(),
                 max_tokens: 256,
                 temperature: 0.0,
-                exclude_paths: vec!["**/skip/**".into()],
             },
         )
         .unwrap()
@@ -214,19 +190,6 @@ evaluator: {{ type: llm }}
         assert_eq!(f[0].line, Some(3));
         assert_eq!(f[0].end_line, Some(4));
         assert!(f[0].message.contains("suspicious"));
-    }
-
-    #[test]
-    fn skips_excluded_paths() {
-        let judge = judge_with(JudgeResult {
-            findings: vec![],
-            patch: None,
-        });
-        let r = rule(judge);
-        let root = std::env::current_dir().unwrap();
-        let file = SourceFile::new(root.join("skip").join("a.rs"), "fn x() {}\n");
-        let f = r.evaluate_file(&file, &EvalContext { repo_root: &root });
-        assert!(f.is_empty());
     }
 
     #[test]
@@ -306,7 +269,6 @@ evaluator: {{ type: llm }}
                 model: "m".into(),
                 max_tokens: 64,
                 temperature: 0.0,
-                exclude_paths: vec![],
             },
         )
         .unwrap();

@@ -35,19 +35,17 @@ fn parse_pack_rule(filename: &str) -> ParsedRule {
 
 fn build_ast(filename: &str) -> AstRule {
     let parsed = parse_pack_rule(filename);
-    let (query, capture, message, not_under, exclude_paths) = match &parsed.evaluator {
+    let (query, capture, message, not_under) = match &parsed.evaluator {
         EvaluatorSpec::Ast {
             query,
             capture,
             message,
             not_under,
-            exclude_paths,
         } => (
             query.clone(),
             capture.clone(),
             message.clone(),
             not_under.clone(),
-            exclude_paths.clone(),
         ),
         other => panic!("expected ast evaluator, got {other:?}"),
     };
@@ -58,7 +56,6 @@ fn build_ast(filename: &str) -> AstRule {
             capture: capture.as_deref(),
             message: message.as_deref(),
             not_under: &not_under,
-            exclude_paths: &exclude_paths,
         },
     )
     .unwrap_or_else(|e| panic!("building {filename}: {e}"))
@@ -66,15 +63,14 @@ fn build_ast(filename: &str) -> AstRule {
 
 fn build_regex(filename: &str) -> RegexRule {
     let parsed = parse_pack_rule(filename);
-    let (pattern, replacement, exclude_paths) = match &parsed.evaluator {
+    let (pattern, replacement) = match &parsed.evaluator {
         EvaluatorSpec::Regex {
             pattern,
-            exclude_paths,
             replacement,
-        } => (pattern.clone(), replacement.clone(), exclude_paths.clone()),
+        } => (pattern.clone(), replacement.clone()),
         other => panic!("expected regex evaluator for {filename}, got {other:?}"),
     };
-    RegexRule::from_parsed(parsed, &pattern, &exclude_paths, replacement.as_deref())
+    RegexRule::from_parsed(parsed, &pattern, replacement.as_deref())
         .unwrap_or_else(|e| panic!("building {filename}: {e}"))
 }
 

@@ -31,7 +31,6 @@ pub struct Config {
     pub size: SizeRuleConfig,
     pub complexity: ComplexityRuleConfig,
     pub duplication: DuplicationRuleConfig,
-    pub paths: PathsConfig,
     pub judge: JudgeConfig,
     pub autofix: AutofixConfig,
 }
@@ -136,35 +135,41 @@ impl Default for DuplicationRuleConfig {
     }
 }
 
-/// Path filters applied before any rule runs. The default list matches
-/// generated and vendored files that we never want to grade — `Cargo.lock`,
-/// build outputs, dependency directories. User config replaces (not extends)
-/// the default list, so projects can opt out.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct PathsConfig {
-    pub exclude: Vec<String>,
-}
+/// The hardcoded list of paths sextant never grades — generated and
+/// vendored files (`Cargo.lock`, build outputs, dependency directories,
+/// `.git`). Baked into the engine so the choice of what to skip is not a
+/// configuration knob agents can edit to hide findings.
+const DEFAULT_EXCLUDES: &[&str] = &[
+    "**/Cargo.lock",
+    "**/package-lock.json",
+    "**/yarn.lock",
+    "**/pnpm-lock.yaml",
+    "**/poetry.lock",
+    "**/uv.lock",
+    "**/target/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.git/**",
+    "**/.sextant/cache/**",
+];
 
-impl Default for PathsConfig {
-    fn default() -> Self {
-        Self {
-            exclude: vec![
-                "**/Cargo.lock".into(),
-                "**/package-lock.json".into(),
-                "**/yarn.lock".into(),
-                "**/pnpm-lock.yaml".into(),
-                "**/poetry.lock".into(),
-                "**/uv.lock".into(),
-                "**/target/**".into(),
-                "**/node_modules/**".into(),
-                "**/dist/**".into(),
-                "**/build/**".into(),
-                "**/.git/**".into(),
-                "**/.sextant/cache/**".into(),
-            ],
-        }
+/// Compile the hardcoded skip list into a `GlobSet`. Sextant never grades
+/// these paths (generated artifacts, vendored deps); the set is not
+/// user-configurable on purpose.
+pub fn default_exclude_matcher() -> Result<GlobSet, ConfigError> {
+    let mut builder = GlobSetBuilder::new();
+    for pattern in DEFAULT_EXCLUDES {
+        let glob = Glob::new(pattern).map_err(|source| ConfigError::Glob {
+            pattern: (*pattern).to_string(),
+            source,
+        })?;
+        builder.add(glob);
     }
+    builder.build().map_err(|source| ConfigError::Glob {
+        pattern: "<set>".into(),
+        source,
+    })
 }
 
 /// LLM-as-judge configuration. Defaults to disabled — projects opt in by
@@ -237,23 +242,6 @@ impl Default for AutofixConfig {
     }
 }
 
-impl PathsConfig {
-    pub fn matcher(&self) -> Result<GlobSet, ConfigError> {
-        let mut builder = GlobSetBuilder::new();
-        for pattern in &self.exclude {
-            let glob = Glob::new(pattern).map_err(|source| ConfigError::Glob {
-                pattern: pattern.clone(),
-                source,
-            })?;
-            builder.add(glob);
-        }
-        builder.build().map_err(|source| ConfigError::Glob {
-            pattern: "<set>".into(),
-            source,
-        })
-    }
-}
-
 impl Config {
     pub fn load_or_default(path: &Path) -> Result<Self, ConfigError> {
         if !path.exists() {
@@ -315,8 +303,7 @@ mod tests {
 
     #[test]
     fn default_path_matcher_excludes_generated_files() {
-        let cfg = PathsConfig::default();
-        let m = cfg.matcher().unwrap();
+        let m = default_exclude_matcher().unwrap();
         assert!(m.is_match("Cargo.lock"));
         assert!(m.is_match("crates/foo/Cargo.lock"));
         assert!(m.is_match("target/debug/build/foo"));
@@ -342,10 +329,14 @@ mod tests {
     }
 
     #[test]
-    fn user_paths_replaces_defaults() {
+    fn unknown_paths_section_is_ignored() {
+        // The `[paths]` config section was removed. Existing repos that
+        // still ship it must keep loading cleanly — serde silently drops
+        // the unknown key.
         let (_dir, cfg) = write_and_load("[paths]\nexclude = [\"**/secret/**\"]\n");
-        let m = cfg.paths.matcher().unwrap();
-        assert!(m.is_match("a/secret/b.rs"));
-        assert!(!m.is_match("Cargo.lock"));
+        let _ = cfg;
+        let m = default_exclude_matcher().unwrap();
+        assert!(!m.is_match("a/secret/b.rs"));
+        assert!(m.is_match("Cargo.lock"));
     }
 }
