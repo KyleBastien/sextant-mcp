@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.12...v0.1.13) (2026-05-14)
+
+
+### Features
+
+* remove file-exclusion knobs from sextant config ([#40](https://github.com/KyleBastien/sextant-mcp/issues/40)) ([f478ce0](https://github.com/KyleBastien/sextant-mcp/commit/f478ce05b190ecc568cfdb9c9c922a256ad8c310))
+
 ## [0.1.12](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.11...v0.1.12) (2026-05-13)
 
 
