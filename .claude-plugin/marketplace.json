@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "sextant-mcp",
+  "version": "1.0.0",
+  "description": "Sextant — code-quality grader for AI agents. Runs after edits, surfaces findings, and optionally blocks turn-end on a RequestChanges verdict.",
+  "owner": {
+    "name": "Kyle Bastien"
+  },
+  "plugins": [
+    {
+      "name": "sextant",
+      "description": "Code-quality grader for AI agents. Runs Sextant after edits, surfaces findings to the agent so it self-corrects, and optionally blocks turn-end on a RequestChanges verdict.",
+      "source": "./plugin",
+      "category": "development"
+    }
+  ]
+}
