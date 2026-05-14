@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.15](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.14...v0.1.15) (2026-05-14)
+
+
+### Features
+
+* **rules:** cross-file duplicate detection for tokens_dup ([#45](https://github.com/KyleBastien/sextant-mcp/issues/45)) ([a6c97e6](https://github.com/KyleBastien/sextant-mcp/commit/a6c97e603c3955a29a396b7c1996a8b5f2f3c8e7))
+
 ## [0.1.14](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.13...v0.1.14) (2026-05-14)
 
 
