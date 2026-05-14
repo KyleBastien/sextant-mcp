@@ -122,14 +122,12 @@ fn build_evaluator(
         EvaluatorSpec::Builtin { name } => build_builtin(&name, rule, config).map(Some),
         EvaluatorSpec::Regex {
             pattern,
-            exclude_paths,
             replacement,
-        } => build_regex(rule, &pattern, &exclude_paths, replacement.as_deref()).map(Some),
+        } => build_regex(rule, &pattern, replacement.as_deref()).map(Some),
         EvaluatorSpec::Llm {
             model,
             max_tokens,
             temperature,
-            exclude_paths,
             ..
         } => {
             let Some(judge) = judge else {
@@ -140,7 +138,6 @@ fn build_evaluator(
                 model: model.unwrap_or_else(|| config.judge.model.clone()),
                 max_tokens: max_tokens.unwrap_or(config.judge.max_tokens),
                 temperature: temperature.unwrap_or(config.judge.temperature),
-                exclude_paths,
             };
             build_llm(rule, Arc::clone(judge), spec).map(Some)
         }
@@ -149,14 +146,12 @@ fn build_evaluator(
             capture,
             message,
             not_under,
-            exclude_paths,
         } => {
             let spec = AstRuleSpec {
                 query: &query,
                 capture: capture.as_deref(),
                 message: message.as_deref(),
                 not_under: &not_under,
-                exclude_paths: &exclude_paths,
             };
             Ok(Some(Arc::new(AstRule::from_parsed(rule, spec)?)))
         }
@@ -192,11 +187,10 @@ fn build_builtin(
 fn build_regex(
     rule: ParsedRule,
     pattern: &str,
-    exclude_paths: &[String],
     replacement: Option<&str>,
 ) -> Result<Arc<dyn Evaluator>, RuleSetError> {
     let id = rule.id.clone();
-    let built = RegexRule::from_parsed(rule, pattern, exclude_paths, replacement)
+    let built = RegexRule::from_parsed(rule, pattern, replacement)
         .map_err(|source| RuleSetError::Regex { rule: id, source })?;
     Ok(Arc::new(built))
 }

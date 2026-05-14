@@ -7,7 +7,6 @@
 //!   not_under: [catch_clause]   # optional ancestor-skip
 //!   capture: t                  # optional; defaults to the first capture
 //!   message: "..."              # optional override
-//!   exclude_paths: ["**/dist/**"]
 //! ```
 //!
 //! The rule must declare `languages:` — the same query is compiled once per
@@ -16,7 +15,6 @@
 
 use std::collections::HashMap;
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
 use sextant_core::{EvalContext, Evaluator, Finding, Rule, SourceFile};
 use sextant_lang::{parse, Language};
 use tree_sitter::{Node, Query, QueryCursor};
@@ -30,7 +28,6 @@ pub struct AstRule {
     capture: Option<String>,
     message: Option<String>,
     not_under: Vec<String>,
-    exclude: GlobSet,
 }
 
 impl AstRule {
@@ -56,18 +53,6 @@ impl AstRule {
             })?;
             queries.insert(language, query);
         }
-        let mut builder = GlobSetBuilder::new();
-        for p in spec.exclude_paths {
-            let glob = Glob::new(p).map_err(|source| AstBuildError::Glob {
-                pattern: p.clone(),
-                source,
-            })?;
-            builder.add(glob);
-        }
-        let exclude = builder.build().map_err(|source| AstBuildError::Glob {
-            pattern: "<set>".into(),
-            source,
-        })?;
         let rule = rule_from_parsed(parsed);
         Ok(Self {
             rule,
@@ -75,7 +60,6 @@ impl AstRule {
             capture: spec.capture.map(str::to_string),
             message: spec.message.map(str::to_string),
             not_under: spec.not_under.to_vec(),
-            exclude,
         })
     }
 }
@@ -85,7 +69,6 @@ pub struct AstRuleSpec<'a> {
     pub capture: Option<&'a str>,
     pub message: Option<&'a str>,
     pub not_under: &'a [String],
-    pub exclude_paths: &'a [String],
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -100,12 +83,6 @@ pub enum AstBuildError {
         language: String,
         message: String,
     },
-    #[error("invalid glob `{pattern}`: {source}")]
-    Glob {
-        pattern: String,
-        #[source]
-        source: globset::Error,
-    },
 }
 
 impl Evaluator for AstRule {
@@ -115,9 +92,6 @@ impl Evaluator for AstRule {
 
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
         let rel = file.relative_to(ctx.repo_root);
-        if self.exclude.is_match(&rel) {
-            return Vec::new();
-        }
         let Some(language) = file.language_hint().and_then(Language::from_hint) else {
             return Vec::new();
         };
@@ -234,7 +208,6 @@ evaluator: {{ type: ast, query: "{}" }}
                 capture: None,
                 message: None,
                 not_under: &not_under_owned,
-                exclude_paths: &[],
             },
         )
         .unwrap()
@@ -294,7 +267,6 @@ evaluator: {{ type: ast, query: "{}" }}
                 capture: None,
                 message: None,
                 not_under: &[],
-                exclude_paths: &[],
             },
         )
     }

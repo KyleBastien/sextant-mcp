@@ -38,13 +38,12 @@ imports, and similar lexical checks.
 evaluator:
   type: regex
   pattern: '\.unwrap\('
-  exclude_paths: ["**/tests/**", "**/*_test.rs"]
 ```
 
 | Field | Required | Notes |
 |---|---|---|
 | `pattern` | yes | Standard Rust regex. Matched against each line of each file in scope. |
-| `exclude_paths` | no | Glob patterns that skip files. Useful for keeping rules out of test code. |
+| `replacement` | no | Regex-crate replacement template (`$1`, named captures). When set, each match emits a unified-diff patch rewriting the line. |
 
 The rule fires once per matched line. The full body of the rule
 (everything below the frontmatter) becomes the `message` of the
@@ -64,7 +63,6 @@ evaluator:
   capture: t                          # optional, defaults to first capture
   message: "no `any` allowed"         # optional override
   not_under: [catch_clause]           # optional ancestor-skip
-  exclude_paths: ["**/dist/**"]
 ```
 
 | Field | Required | Notes |
@@ -73,7 +71,6 @@ evaluator:
 | `capture` | no | Capture name to anchor the finding line. Defaults to the first capture. |
 | `message` | no | Override message. Falls back to `<rule.name>: matched <snippet>`. |
 | `not_under` | no | Drop a match if any ancestor's node kind is in this list. Used for context-sensitive exemptions like "allow `unknown` only inside `catch_clause`". |
-| `exclude_paths` | no | Glob patterns that skip files. |
 
 The rule must declare at least one entry in `languages:` — the same
 query is compiled once per listed language. AST findings are anchored
@@ -97,7 +94,6 @@ evaluator:
   model: claude-sonnet-4-6        # optional; falls back to [judge].model
   max_tokens: 1024                # optional
   temperature: 0.0                # optional
-  exclude_paths: ["**/tests/**"]
 ```
 
 | Field | Required | Notes |
@@ -105,7 +101,6 @@ evaluator:
 | `model` | no | Override `[judge].model`. Provider is inferred from the model name (Claude or GPT). |
 | `max_tokens` | no | Per-call cap. |
 | `temperature` | no | Defaults to `0.0` for determinism. |
-| `exclude_paths` | no | Same as for regex. |
 
 The rule body is the prompt. Placeholders `{{path}}`, `{{code}}`, and
 `{{rule.id}}` get substituted at evaluation time. Output is constrained

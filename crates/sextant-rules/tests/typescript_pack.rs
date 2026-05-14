@@ -28,19 +28,17 @@ fn load_rule(filename: &str) -> AstRule {
         Some(path.clone()),
     )
     .unwrap_or_else(|e| panic!("parsing {}: {e}", path.display()));
-    let (query, capture, message, not_under, exclude_paths) = match &parsed.evaluator {
+    let (query, capture, message, not_under) = match &parsed.evaluator {
         EvaluatorSpec::Ast {
             query,
             capture,
             message,
             not_under,
-            exclude_paths,
         } => (
             query.clone(),
             capture.clone(),
             message.clone(),
             not_under.clone(),
-            exclude_paths.clone(),
         ),
         other => panic!("expected ast evaluator, got {other:?}"),
     };
@@ -51,7 +49,6 @@ fn load_rule(filename: &str) -> AstRule {
             capture: capture.as_deref(),
             message: message.as_deref(),
             not_under: &not_under,
-            exclude_paths: &exclude_paths,
         },
     )
     .unwrap_or_else(|e| panic!("building {filename}: {e}"))

@@ -29,7 +29,6 @@ languages: [rust, python]          # omit = all languages
 evaluator:                         # see below
   type: regex
   pattern: '\.unwrap\('
-  exclude_paths: ["**/tests/**"]
 enabled: true                      # default true
 overrides: []                      # rule ids this rule disables
 tags: [rust, panics]
@@ -47,7 +46,6 @@ and similar lexical checks.
 evaluator:
   type: regex
   pattern: '\.unwrap\(' # standard Rust regex syntax
-  exclude_paths: ["**/tests/**", "**/*_test.rs"]
 ```
 
 ### `llm` — LLM-as-judge
@@ -62,7 +60,6 @@ evaluator:
   model: claude-sonnet-4-6        # optional; falls back to [judge].model
   max_tokens: 1024                # optional
   temperature: 0.0                # optional
-  exclude_paths: ["**/tests/**"]
 ```
 
 The body should explain to the LLM what to look for and ask for

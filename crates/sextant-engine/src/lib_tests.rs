@@ -73,15 +73,15 @@ fn grade_file_buffer_uses_overlay_text() {
 }
 
 #[test]
-fn grade_file_buffer_respects_path_excludes() {
+fn grade_file_buffer_skips_hardcoded_generated_paths() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     write(
         root,
         ".sextant/config.toml",
-        "[paths]\nexclude = [\"vendor/**\"]\n[size]\nfile_length_warn = 5\nfile_length_error = 10\n",
+        "[size]\nfile_length_warn = 5\nfile_length_error = 10\n",
     );
-    let overlay = SourceFile::new(root.join("vendor/long.rs"), "x\n".repeat(25));
+    let overlay = SourceFile::new(root.join("node_modules/pkg/long.js"), "x\n".repeat(25));
     let report = grade_file_buffer(root, overlay, GradeOptions::default()).unwrap();
     assert!(report.findings.is_empty());
 }

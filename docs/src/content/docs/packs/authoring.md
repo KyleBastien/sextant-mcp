@@ -98,7 +98,6 @@ evaluator:
   capture: t
   not_under: [catch_clause]
   message: "no `unknown` here — use a generic"
-  exclude_paths: ["**/dist/**"]
 ```
 
 | Field | Required | Notes |
@@ -107,7 +106,6 @@ evaluator:
 | `capture` | no | Capture name to anchor the finding line. Defaults to the first capture in the query. |
 | `message` | no | Override message. Falls back to `<rule.name>: matched <snippet>`. |
 | `not_under` | no | Drop a match if any ancestor's node kind is in this list. |
-| `exclude_paths` | no | Glob patterns that skip files. |
 
 Authoring tip: keep one `pack.toml` checked into the repo while you
 iterate, install via `file:./path/to/pack`, and `sextant rules update`
