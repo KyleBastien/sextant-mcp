@@ -6,60 +6,11 @@
 //! no-empty-type-construction, no-implicit-any-field) plus their
 //! patch-shape assertions for the two regex rules.
 
-use std::path::PathBuf;
+mod common;
 
-use sextant_core::{EvalContext, Evaluator, Finding, RuleSource, SourceFile};
-use sextant_rules::{parse_rule_md, AstRule, AstRuleSpec, EvaluatorSpec, ParsedRule, RegexRule};
-
-fn pack_root() -> PathBuf {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .parent()
-        .and_then(|p| p.parent())
-        .unwrap()
-        .join("packs")
-        .join("typescript")
-}
-
-fn parse_pack_rule(filename: &str) -> ParsedRule {
-    let path = pack_root().join("rules").join(filename);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
-    parse_rule_md(
-        &text,
-        RuleSource::Vendor("typescript".into()),
-        Some(path.clone()),
-    )
-    .unwrap_or_else(|e| panic!("parsing {}: {e}", path.display()))
-}
-
-fn build_ast(filename: &str) -> AstRule {
-    let parsed = parse_pack_rule(filename);
-    let (query, capture, message, not_under) = match &parsed.evaluator {
-        EvaluatorSpec::Ast {
-            query,
-            capture,
-            message,
-            not_under,
-        } => (
-            query.clone(),
-            capture.clone(),
-            message.clone(),
-            not_under.clone(),
-        ),
-        other => panic!("expected ast evaluator, got {other:?}"),
-    };
-    AstRule::from_parsed(
-        parsed,
-        AstRuleSpec {
-            query: &query,
-            capture: capture.as_deref(),
-            message: message.as_deref(),
-            not_under: &not_under,
-        },
-    )
-    .unwrap_or_else(|e| panic!("building {filename}: {e}"))
-}
+use common::{load_rule as build_ast, parse_pack_rule};
+use sextant_core::{EvalContext, Evaluator, Finding, SourceFile};
+use sextant_rules::{EvaluatorSpec, RegexRule};
 
 fn build_regex(filename: &str) -> RegexRule {
     let parsed = parse_pack_rule(filename);

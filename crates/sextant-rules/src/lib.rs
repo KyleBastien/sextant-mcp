@@ -12,6 +12,7 @@ mod duplication;
 pub mod fetcher;
 mod file_length;
 mod fn_length;
+mod function_walker;
 mod llm_rule;
 pub mod loader;
 pub mod lock;
@@ -25,7 +26,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use sextant_config::Config;
-use sextant_core::{EvalContext, Evaluator, Finding, SourceFile};
+use sextant_core::{CorpusEvaluator, EvalContext, Evaluator, Finding, SourceFile};
 use sextant_judge::Judge;
 use thiserror::Error;
 
@@ -62,6 +63,16 @@ pub enum RuleSetError {
 /// `.sextant/rules/` directory.
 pub struct RuleSet {
     evaluators: Vec<Arc<dyn Evaluator>>,
+    corpus_evaluators: Vec<Arc<dyn CorpusEvaluator>>,
+}
+
+/// What [`build_evaluator`] hands back: either or both of a per-file
+/// evaluator and a corpus-level evaluator. Most rules return file-only;
+/// `tokens_dup` returns both because it works at both scopes.
+#[derive(Default)]
+struct EvaluatorBundle {
+    file: Option<Arc<dyn Evaluator>>,
+    corpus: Option<Arc<dyn CorpusEvaluator>>,
 }
 
 impl RuleSet {
@@ -87,19 +98,35 @@ impl RuleSet {
             loader::repo_rules(repo_root)?,
         )?;
         let mut evaluators: Vec<Arc<dyn Evaluator>> = Vec::with_capacity(parsed.len());
+        let mut corpus_evaluators: Vec<Arc<dyn CorpusEvaluator>> = Vec::new();
         for rule in parsed {
-            if let Some(ev) = build_evaluator(rule, config, judge.as_ref())? {
+            let bundle = build_evaluator(rule, config, judge.as_ref())?;
+            if let Some(ev) = bundle.file {
                 evaluators.push(ev);
             }
+            if let Some(ev) = bundle.corpus {
+                corpus_evaluators.push(ev);
+            }
         }
-        Ok(Self { evaluators })
+        Ok(Self {
+            evaluators,
+            corpus_evaluators,
+        })
     }
 
     pub fn evaluators(&self) -> &[Arc<dyn Evaluator>] {
         &self.evaluators
     }
 
-    pub fn grade_files(&self, files: &[SourceFile], ctx: &EvalContext<'_>) -> Vec<Finding> {
+    pub fn corpus_evaluators(&self) -> &[Arc<dyn CorpusEvaluator>] {
+        &self.corpus_evaluators
+    }
+
+    /// Per-file evaluators only. Use when the caller wants to control the
+    /// corpus set separately (e.g. diff-mode grading: per-file pass runs
+    /// against changed files, but corpus pass must see the whole tree so
+    /// cross-file rules can find their counterparts in unchanged files).
+    pub fn grade_per_file(&self, files: &[SourceFile], ctx: &EvalContext<'_>) -> Vec<Finding> {
         let mut out = Vec::new();
         for file in files {
             for ev in &self.evaluators {
@@ -111,19 +138,43 @@ impl RuleSet {
         }
         out
     }
+
+    /// Corpus-level evaluators only.
+    pub fn grade_corpus(&self, files: &[SourceFile], ctx: &EvalContext<'_>) -> Vec<Finding> {
+        let mut out = Vec::new();
+        for ev in &self.corpus_evaluators {
+            if !ev.rule().enabled {
+                continue;
+            }
+            out.extend(ev.evaluate_corpus(files, ctx));
+        }
+        out
+    }
+
+    /// Run both passes against a single file set. The convenient default
+    /// when caller doesn't need to distinguish corpus from per-file scope.
+    pub fn grade_files(&self, files: &[SourceFile], ctx: &EvalContext<'_>) -> Vec<Finding> {
+        let mut out = self.grade_per_file(files, ctx);
+        out.extend(self.grade_corpus(files, ctx));
+        out
+    }
 }
 
 fn build_evaluator(
     rule: ParsedRule,
     config: &Config,
     judge: Option<&Arc<Judge>>,
-) -> Result<Option<Arc<dyn Evaluator>>, RuleSetError> {
+) -> Result<EvaluatorBundle, RuleSetError> {
     match rule.evaluator.clone() {
-        EvaluatorSpec::Builtin { name } => build_builtin(&name, rule, config).map(Some),
+        EvaluatorSpec::Builtin { name } => build_builtin(&name, rule, config),
         EvaluatorSpec::Regex {
             pattern,
             replacement,
-        } => build_regex(rule, &pattern, replacement.as_deref()).map(Some),
+        } => Ok(file_only(build_regex(
+            rule,
+            &pattern,
+            replacement.as_deref(),
+        )?)),
         EvaluatorSpec::Llm {
             model,
             max_tokens,
@@ -132,14 +183,14 @@ fn build_evaluator(
         } => {
             let Some(judge) = judge else {
                 tracing::info!(rule = %rule.id, "skipping LLM rule: no judge configured");
-                return Ok(None);
+                return Ok(EvaluatorBundle::default());
             };
             let spec = LlmRuleSpec {
                 model: model.unwrap_or_else(|| config.judge.model.clone()),
                 max_tokens: max_tokens.unwrap_or(config.judge.max_tokens),
                 temperature: temperature.unwrap_or(config.judge.temperature),
             };
-            build_llm(rule, Arc::clone(judge), spec).map(Some)
+            Ok(file_only(build_llm(rule, Arc::clone(judge), spec)?))
         }
         EvaluatorSpec::Ast {
             query,
@@ -153,8 +204,15 @@ fn build_evaluator(
                 message: message.as_deref(),
                 not_under: &not_under,
             };
-            Ok(Some(Arc::new(AstRule::from_parsed(rule, spec)?)))
+            Ok(file_only(Arc::new(AstRule::from_parsed(rule, spec)?)))
         }
+    }
+}
+
+fn file_only(ev: Arc<dyn Evaluator>) -> EvaluatorBundle {
+    EvaluatorBundle {
+        file: Some(ev),
+        corpus: None,
     }
 }
 
@@ -162,21 +220,37 @@ fn build_builtin(
     name: &str,
     rule: ParsedRule,
     config: &Config,
-) -> Result<Arc<dyn Evaluator>, RuleSetError> {
+) -> Result<EvaluatorBundle, RuleSetError> {
     match name {
-        "file_length" => Ok(Arc::new(FileLengthRule::from_parsed(rule, &config.size))),
-        "fn_length" => Ok(Arc::new(FnLengthRule::from_parsed(rule, &config.size))),
-        "param_count" => Ok(Arc::new(ParamCountRule::from_parsed(rule, &config.size))),
-        "cyclomatic" => Ok(Arc::new(ComplexityRule::cyclomatic(
+        "file_length" => Ok(file_only(Arc::new(FileLengthRule::from_parsed(
+            rule,
+            &config.size,
+        )))),
+        "fn_length" => Ok(file_only(Arc::new(FnLengthRule::from_parsed(
+            rule,
+            &config.size,
+        )))),
+        "param_count" => Ok(file_only(Arc::new(ParamCountRule::from_parsed(
+            rule,
+            &config.size,
+        )))),
+        "cyclomatic" => Ok(file_only(Arc::new(ComplexityRule::cyclomatic(
             rule,
             &config.complexity,
-        ))),
-        "nesting" => Ok(Arc::new(ComplexityRule::nesting(rule, &config.complexity))),
-        "tokens_dup" => Ok(Arc::new(DuplicationRule::from_parsed(
+        )))),
+        "nesting" => Ok(file_only(Arc::new(ComplexityRule::nesting(
             rule,
-            &config.duplication,
-        ))),
-        "pub_fn_untested" => Ok(Arc::new(PubFnUntestedRule::from_parsed(rule))),
+            &config.complexity,
+        )))),
+        "tokens_dup" => {
+            let dup: Arc<DuplicationRule> =
+                Arc::new(DuplicationRule::from_parsed(rule, &config.duplication));
+            Ok(EvaluatorBundle {
+                file: Some(dup.clone()),
+                corpus: Some(dup),
+            })
+        }
+        "pub_fn_untested" => Ok(file_only(Arc::new(PubFnUntestedRule::from_parsed(rule)))),
         other => Err(RuleSetError::UnknownBuiltin {
             rule: rule.id,
             name: other.to_string(),
@@ -221,75 +295,5 @@ fn rule_applies_to_file(ev: &dyn Evaluator, file: &SourceFile) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use sextant_core::EvalContext;
-
-    #[test]
-    fn load_picks_up_built_ins_with_default_config() {
-        let dir = tempfile::tempdir().unwrap();
-        let cfg = Config::default();
-        let set = RuleSet::load(dir.path(), &cfg).unwrap();
-        let ids: Vec<_> = set
-            .evaluators()
-            .iter()
-            .map(|e| e.rule().id.clone())
-            .collect();
-        assert!(ids.contains(&"builtin.size.file-length".to_string()));
-        assert!(ids.contains(&"builtin.tests.pub-fn-untested".to_string()));
-    }
-
-    #[test]
-    fn load_with_no_judge_drops_llm_rules() {
-        // Repo with one LLM rule. With `judge = None`, it must not surface
-        // among the loaded evaluators.
-        let dir = tempfile::tempdir().unwrap();
-        let rules_dir = dir.path().join(".sextant").join("rules");
-        std::fs::create_dir_all(&rules_dir).unwrap();
-        std::fs::write(
-            rules_dir.join("llm.md"),
-            r#"---
-id: repo.llm.demo
-name: "LLM demo"
-description: "x"
-severity: warn
-category: style
-languages: [rust]
-evaluator:
-  type: llm
----
-"#,
-        )
-        .unwrap();
-        let cfg = Config::default();
-        let set = RuleSet::load_with(dir.path(), &cfg, None).unwrap();
-        let ids: Vec<_> = set
-            .evaluators()
-            .iter()
-            .map(|e| e.rule().id.clone())
-            .collect();
-        assert!(!ids.contains(&"repo.llm.demo".to_string()));
-    }
-
-    #[test]
-    fn grade_files_runs_built_in_size_rule() {
-        let dir = tempfile::tempdir().unwrap();
-        let cfg = Config {
-            size: sextant_config::SizeRuleConfig {
-                file_length_warn: 5,
-                file_length_error: 10,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let set = RuleSet::load(dir.path(), &cfg).unwrap();
-        let file = SourceFile::new(dir.path().join("a.rs"), "x\n".repeat(20));
-        let ctx = EvalContext {
-            repo_root: dir.path(),
-        };
-        let findings = set.grade_files(&[file], &ctx);
-        assert!(findings
-            .iter()
-            .any(|f| f.rule_id == "builtin.size.file-length"));
-    }
-}
+#[path = "lib_tests.rs"]
+mod tests;

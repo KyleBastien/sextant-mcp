@@ -95,31 +95,8 @@ fn escape_pipe(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sextant_core::{BaselineDelta, Report, Severity, SeverityCounts, Verdict};
-
-    fn finding(rule: &str, sev: Severity, path: &str, line: Option<u32>, msg: &str) -> Finding {
-        let mut f = Finding::new(rule, sev, path, msg);
-        if let Some(l) = line {
-            f = f.at_line(l);
-        }
-        f
-    }
-
-    fn pr_report(new: Vec<Finding>, fixed: Vec<Finding>, verdict: Verdict) -> PrReport {
-        PrReport {
-            head: Report::build(new.clone(), Verdict::Approve),
-            baseline: Report::build(fixed.clone(), Verdict::Approve),
-            delta: BaselineDelta {
-                base_sha: Some("abcdef1234567890".into()),
-                new_findings: new.clone(),
-                fixed_findings: fixed.clone(),
-                unchanged: 3,
-                new_counts: SeverityCounts::from_findings(&new),
-                fixed_counts: SeverityCounts::from_findings(&fixed),
-            },
-            verdict,
-        }
-    }
+    use crate::commands::format::test_fixtures::{finding, pr_report};
+    use sextant_core::{Severity, Verdict};
 
     #[test]
     fn markdown_pr_lists_new_and_fixed() {
@@ -135,6 +112,7 @@ mod tests {
             Verdict::RequestChanges {
                 reasons: vec!["1 errors > 0".into()],
             },
+            3,
         );
         let md = markdown_pr(&pr);
         assert!(md.contains("REQUEST_CHANGES"));
@@ -150,7 +128,7 @@ mod tests {
     fn markdown_pr_renders_proposed_fix_diff_blocks() {
         let mut f = finding("r.fix", Severity::Warn, "src/a.rs", Some(2), "boom");
         f = f.with_patch("--- a/src/a.rs\n+++ b/src/a.rs\n@@ -2,1 +2,1 @@\n-x\n+y\n");
-        let pr = pr_report(vec![f], vec![], Verdict::Approve);
+        let pr = pr_report(vec![f], vec![], Verdict::Approve, 3);
         let md = markdown_pr(&pr);
         assert!(md.contains("Proposed fixes"));
         assert!(md.contains("```diff"));
@@ -159,7 +137,7 @@ mod tests {
 
     #[test]
     fn markdown_pr_clean_run_says_so() {
-        let pr = pr_report(vec![], vec![], Verdict::Approve);
+        let pr = pr_report(vec![], vec![], Verdict::Approve, 3);
         let md = markdown_pr(&pr);
         assert!(md.contains("APPROVE"));
         assert!(md.contains("No code-quality changes detected"));

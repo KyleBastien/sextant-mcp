@@ -1,10 +1,10 @@
 ---
 id: builtin.duplication.tokens
 name: "Token duplication"
-description: "Repeated runs of structurally-identical code within a file."
+description: "Repeated runs of structurally-identical code, within a file or across files."
 severity: warn
 category: duplication
-scope: file
+scope: repo
 languages: [rust, python, go, java, typescript, tsx, javascript]
 evaluator:
   type: builtin
@@ -17,14 +17,18 @@ tags: [duplication]
 
 Detects regions of code that share the same token structure — the same
 sequence of statement and expression shapes, even with different
-identifiers and literals (a "type-2" clone). Two occurrences of more
-than `min_tokens` consecutive matching tokens within a single file
-trigger a finding.
+identifiers and literals (a "type-2" clone). The rule runs two passes:
 
-Each clone produces two findings, one anchored at each occurrence,
-each pointing at the other. That keeps `grade_diff` honest: when only
-one side of a clone is in the diff, the side actually being changed
-gets flagged.
+- **In-file**: two occurrences of >= `min_tokens` consecutive matching
+  tokens within a single file.
+- **Cross-file**: two occurrences of >= `cross_file_min_tokens` matching
+  tokens spread across two files of the same language.
+
+Each clone produces two findings, one anchored at each occurrence, each
+pointing at the other. The cross-file findings name the other file by
+its repo-relative path. That keeps `grade_diff` honest: when only one
+side of a clone is in the diff, the side actually being changed gets
+flagged.
 
 ## Thresholds
 
@@ -32,11 +36,14 @@ Configure under `[duplication]` in `.sextant/config.toml`:
 
 ```toml
 [duplication]
-min_tokens = 100   # roughly ~20 lines of typical code
+min_tokens = 100              # in-file clones; ~20 lines of typical code
+cross_file_min_tokens = 200   # cross-file clones; defaulted higher because
+                              # incidental structural similarity across
+                              # unrelated files is more common
 ```
 
-Lowering this catches more duplication at the cost of noise; raising
-it flags only substantial copy-paste.
+Lowering these catches more duplication at the cost of noise; raising
+them flags only substantial copy-paste.
 
 ## Fixing a finding
 
@@ -49,11 +56,12 @@ it flags only substantial copy-paste.
 - **Generalize over the type** — repeated logic across types is what
   generics are for.
 
-## Limitations (v1)
+## Limitations
 
-- Within-file only. Cross-file duplication detection is on the roadmap.
 - Token-kind hashing means the rule sees `let x = 1` and `let y = "s"`
   as identical structure (same kinds: `let`, `identifier`, `=`,
   literal, `;`). That's the right call for catching refactor
   candidates but means trivial structural similarity can fire — tune
-  `min_tokens` higher if it's noisy in your codebase.
+  the thresholds higher if it's noisy in your codebase.
+- Cross-file matches are scoped to files of the same tree-sitter
+  language; no cross-language detection (e.g. Rust ↔ TypeScript).

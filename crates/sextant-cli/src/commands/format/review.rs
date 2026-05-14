@@ -81,32 +81,9 @@ fn render_body(pr: &PrReport, bodyless: &[&Finding]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::format::test_fixtures::{finding, pr_report};
     use serde_json::Value;
-    use sextant_core::{BaselineDelta, Report, Severity, SeverityCounts};
-
-    fn finding(rule: &str, sev: Severity, path: &str, line: Option<u32>, msg: &str) -> Finding {
-        let mut f = Finding::new(rule, sev, path, msg);
-        if let Some(l) = line {
-            f = f.at_line(l);
-        }
-        f
-    }
-
-    fn pr_report(new: Vec<Finding>, fixed: Vec<Finding>, verdict: Verdict) -> PrReport {
-        PrReport {
-            head: Report::build(new.clone(), Verdict::Approve),
-            baseline: Report::build(fixed.clone(), Verdict::Approve),
-            delta: BaselineDelta {
-                base_sha: Some("abcdef1234567890".into()),
-                new_findings: new.clone(),
-                fixed_findings: fixed.clone(),
-                unchanged: 0,
-                new_counts: SeverityCounts::from_findings(&new),
-                fixed_counts: SeverityCounts::from_findings(&fixed),
-            },
-            verdict,
-        }
-    }
+    use sextant_core::Severity;
 
     #[test]
     fn review_json_pr_emits_inline_comments_and_marker() {
@@ -119,6 +96,7 @@ mod tests {
             Verdict::RequestChanges {
                 reasons: vec!["1 errors".into()],
             },
+            0,
         );
         let v: Value = serde_json::from_str(&review_json_pr(&pr).unwrap()).unwrap();
         assert_eq!(v["event"], "REQUEST_CHANGES");
@@ -135,7 +113,7 @@ mod tests {
 
     #[test]
     fn review_json_pr_uses_comment_event_for_approve() {
-        let pr = pr_report(vec![], vec![], Verdict::Approve);
+        let pr = pr_report(vec![], vec![], Verdict::Approve, 0);
         let v: Value = serde_json::from_str(&review_json_pr(&pr).unwrap()).unwrap();
         assert_eq!(v["event"], "COMMENT");
         assert!(v["comments"].as_array().unwrap().is_empty());

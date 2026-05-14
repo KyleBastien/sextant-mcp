@@ -88,22 +88,8 @@ pub fn grade_with(
     let ctx = EvalContext { repo_root };
 
     let (mut findings, files) = match mode {
-        GradeMode::Files { paths } => {
-            let targets = if paths.is_empty() {
-                vec![repo_root.to_path_buf()]
-            } else {
-                paths
-            };
-            let files = collect_source_files(repo_root, &targets, &exclude)?;
-            let findings = ruleset.grade_files(&files, &ctx);
-            (findings, files)
-        }
-        GradeMode::Diff(opts) => {
-            let diff = compute_diff(repo_root, &opts)?;
-            let files = source_files_from_diff(repo_root, &diff, &exclude);
-            let raw = ruleset.grade_files(&files, &ctx);
-            (filter_to_diff(raw, &diff), files)
-        }
+        GradeMode::Files { paths } => grade_files_mode(repo_root, paths, &exclude, &ruleset, &ctx)?,
+        GradeMode::Diff(opts) => grade_diff_mode(repo_root, opts, &exclude, &ruleset, &ctx)?,
     };
 
     let rules = collect_rules(&ruleset);
@@ -169,6 +155,41 @@ pub fn grade_file_buffer(
     Ok(Report::build(findings, verdict))
 }
 
+fn grade_files_mode(
+    repo_root: &Path,
+    paths: Vec<PathBuf>,
+    exclude: &GlobSet,
+    ruleset: &RuleSet,
+    ctx: &EvalContext<'_>,
+) -> Result<(Vec<Finding>, Vec<SourceFile>), EngineError> {
+    let targets = if paths.is_empty() {
+        vec![repo_root.to_path_buf()]
+    } else {
+        paths
+    };
+    let files = collect_source_files(repo_root, &targets, exclude)?;
+    let findings = ruleset.grade_files(&files, ctx);
+    Ok((findings, files))
+}
+
+fn grade_diff_mode(
+    repo_root: &Path,
+    opts: DiffOptions,
+    exclude: &GlobSet,
+    ruleset: &RuleSet,
+    ctx: &EvalContext<'_>,
+) -> Result<(Vec<Finding>, Vec<SourceFile>), EngineError> {
+    let diff = compute_diff(repo_root, &opts)?;
+    let diff_files = source_files_from_diff(repo_root, &diff, exclude);
+    let mut raw = ruleset.grade_per_file(&diff_files, ctx);
+    // Corpus pass needs the whole tree so cross-file rules can find
+    // matches in unchanged files. `filter_to_diff` then drops findings
+    // whose anchor isn't in the diff.
+    let all_files = collect_source_files(repo_root, &[repo_root.to_path_buf()], exclude)?;
+    raw.extend(ruleset.grade_corpus(&all_files, ctx));
+    Ok((filter_to_diff(raw, &diff), diff_files))
+}
+
 pub(crate) fn compute_diff(repo_root: &Path, opts: &DiffOptions) -> Result<DiffSet, EngineError> {
     let base_spec = match &opts.base {
         Some(s) => BaseSpec::Ref(s.clone()),
@@ -226,7 +247,7 @@ pub(crate) fn filter_to_diff(findings: Vec<Finding>, diff: &DiffSet) -> Vec<Find
         .collect()
 }
 
-fn collect_source_files(
+pub(crate) fn collect_source_files(
     root: &Path,
     targets: &[PathBuf],
     exclude: &GlobSet,
@@ -324,8 +345,16 @@ pub fn load_config(repo_root: &Path) -> Result<Config, EngineError> {
 }
 
 #[cfg(test)]
+#[path = "test_helpers.rs"]
+mod test_helpers;
+
+#[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "cross_file_dup_tests.rs"]
+mod cross_file_dup_tests;
 
 #[cfg(test)]
 mod smoke {
