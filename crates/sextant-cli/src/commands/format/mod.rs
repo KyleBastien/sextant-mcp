@@ -6,6 +6,8 @@
 mod markdown;
 mod review;
 mod sarif;
+#[cfg(test)]
+mod test_fixtures;
 
 pub use markdown::markdown_pr;
 pub use review::review_json_pr;

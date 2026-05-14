@@ -119,19 +119,24 @@ impl Default for ComplexityRuleConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DuplicationRuleConfig {
-    /// Minimum token-window size that qualifies as a clone. Smaller values
-    /// catch more (and noisier) duplication; larger values flag only
-    /// substantial copy-paste. The default is calibrated to roughly the
-    /// "10 lines of typical code" mark.
+    /// Minimum token-window size that qualifies as a clone *within* a single
+    /// file. Smaller values catch more (and noisier) duplication; larger
+    /// values flag only substantial copy-paste.
     pub min_tokens: u32,
+    /// Minimum token-window size for clones spread *across* two files.
+    /// Defaulted higher than `min_tokens` because incidental structural
+    /// similarity across unrelated files is common; cross-file dups are
+    /// only worth flagging when the run is long enough to clearly be
+    /// copy-paste rather than coincidence.
+    pub cross_file_min_tokens: u32,
 }
 
 impl Default for DuplicationRuleConfig {
     fn default() -> Self {
-        // 100 tokens is roughly 20 lines of typical code — what other
-        // duplication tools (Sonar, CodeScene) calibrate "substantial"
-        // duplication to. Lower it to surface more, raise it for less noise.
-        Self { min_tokens: 100 }
+        Self {
+            min_tokens: 100,
+            cross_file_min_tokens: 200,
+        }
     }
 }
 
@@ -326,6 +331,21 @@ mod tests {
             write_and_load("[autofix]\nllm_synthesis = true\nmax_synthesis_findings = 5\n");
         assert!(cfg.autofix.llm_synthesis);
         assert_eq!(cfg.autofix.max_synthesis_findings, 5);
+    }
+
+    #[test]
+    fn duplication_config_defaults_when_section_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config::from_repo_root(dir.path()).unwrap();
+        assert_eq!(cfg.duplication.min_tokens, 100);
+        assert_eq!(cfg.duplication.cross_file_min_tokens, 200);
+    }
+
+    #[test]
+    fn duplication_config_allows_setting_only_one_knob() {
+        let (_dir, cfg) = write_and_load("[duplication]\nmin_tokens = 50\n");
+        assert_eq!(cfg.duplication.min_tokens, 50);
+        assert_eq!(cfg.duplication.cross_file_min_tokens, 200);
     }
 
     #[test]

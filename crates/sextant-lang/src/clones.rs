@@ -9,16 +9,19 @@
 //! the most common form of accidental duplication and the most actionable
 //! for refactoring.
 //!
-//! Scope is currently within a single file. Cross-file detection would
-//! require an evaluator API that sees all files at once; deferred.
+//! Within-file matching lives in [`find_clones`]; cross-file matching
+//! (token-equal regions spread across files of the same language) lives
+//! in [`find_cross_file_clones`]. Both share the leaf-token stream and
+//! sliding-window machinery; only the grouping changes.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
 
 use tree_sitter::TreeCursor;
 
-use crate::parser::ParsedFile;
+use crate::parser::{Language, ParsedFile};
 
 #[derive(Debug, Clone, Copy)]
 struct Token {
@@ -175,108 +178,170 @@ fn span(tokens: &[Token], start: usize, len: usize) -> CloneSpan {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::parser::{parse, Language};
-
-    #[test]
-    fn finds_exact_duplicate_function() {
-        let src = r#"
-fn one() {
-    let a = 1;
-    let b = 2;
-    let c = 3;
-    let d = 4;
-    let e = 5;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrossFileClonePair {
+    pub file_a: PathBuf,
+    pub a: CloneSpan,
+    pub file_b: PathBuf,
+    pub b: CloneSpan,
+    pub token_count: u32,
 }
 
-fn two() {
-    let a = 1;
-    let b = 2;
-    let c = 3;
-    let d = 4;
-    let e = 5;
+/// Find token-clone pairs whose two occurrences live in *different* files.
+/// Inputs of different languages are never matched against each other.
+/// Same-file pairs are excluded — `find_clones` owns those.
+///
+/// Result is deterministic: pairs are sorted by
+/// `(file_a, a.start_line, file_b, b.start_line, token_count)`.
+pub fn find_cross_file_clones(
+    parsed: &[(PathBuf, &ParsedFile)],
+    min_tokens: usize,
+) -> Vec<CrossFileClonePair> {
+    if min_tokens < 2 || parsed.len() < 2 {
+        return Vec::new();
+    }
+    let mut by_language: HashMap<Language, Vec<usize>> = HashMap::new();
+    for (idx, (_, file)) in parsed.iter().enumerate() {
+        by_language.entry(file.language).or_default().push(idx);
+    }
+    let mut out = Vec::new();
+    for indices in by_language.values() {
+        if indices.len() < 2 {
+            continue;
+        }
+        emit_cross_file_pairs(parsed, indices, min_tokens, &mut out);
+    }
+    out.sort_by(|x, y| {
+        (
+            x.file_a.as_path(),
+            x.a.start_line,
+            x.file_b.as_path(),
+            x.b.start_line,
+            x.token_count,
+        )
+            .cmp(&(
+                y.file_a.as_path(),
+                y.a.start_line,
+                y.file_b.as_path(),
+                y.b.start_line,
+                y.token_count,
+            ))
+    });
+    out
 }
-"#;
-        let parsed = parse(src, Language::Rust).unwrap();
-        let clones = find_clones(&parsed, 20);
-        assert_eq!(clones.len(), 1, "{clones:?}");
-        let c = &clones[0];
-        assert!(c.a.start_line < c.b.start_line);
-        assert!(c.token_count >= 20);
-    }
 
-    #[test]
-    fn detects_type2_renamed_clone() {
-        // Same structure, different identifiers and literals.
-        let src = r#"
-fn alpha(x: i32) -> i32 {
-    if x > 0 {
-        return 1;
-    }
-    return 0;
-}
-
-fn beta(y: i32) -> i32 {
-    if y > 5 {
-        return 2;
-    }
-    return 99;
-}
-"#;
-        let parsed = parse(src, Language::Rust).unwrap();
-        let clones = find_clones(&parsed, 15);
-        assert!(!clones.is_empty(), "expected a clone, got: {clones:?}");
-    }
-
-    #[test]
-    fn ignores_short_overlap() {
-        // Below threshold — no pairs reported.
-        let src = "fn one() {}\nfn two() {}\n";
-        let parsed = parse(src, Language::Rust).unwrap();
-        assert!(find_clones(&parsed, 50).is_empty());
-    }
-
-    #[test]
-    fn pairs_are_non_overlapping() {
-        let src = r#"
-fn f() {
-    let a = 1; let b = 2; let c = 3; let d = 4; let e = 5; let f = 6;
-    let a = 1; let b = 2; let c = 3; let d = 4; let e = 5; let f = 6;
-}
-"#;
-        let parsed = parse(src, Language::Rust).unwrap();
-        let clones = find_clones(&parsed, 10);
-        for c in &clones {
-            assert!(
-                c.a.end_line <= c.b.start_line,
-                "spans should not overlap: {c:?}"
+fn emit_cross_file_pairs(
+    parsed: &[(PathBuf, &ParsedFile)],
+    indices: &[usize],
+    min_tokens: usize,
+    out: &mut Vec<CrossFileClonePair>,
+) {
+    let streams: Vec<Vec<Token>> = indices
+        .iter()
+        .map(|&i| collect_tokens(parsed[i].1))
+        .collect();
+    let groups = build_cross_file_hash_groups(&streams, min_tokens);
+    let mut consumed: Vec<Vec<bool>> = streams.iter().map(|s| vec![false; s.len()]).collect();
+    for positions in groups {
+        for pair in positions.windows(2) {
+            try_record_cross_pair(
+                CrossPairCtx {
+                    parsed,
+                    indices,
+                    streams: &streams,
+                    min_tokens,
+                },
+                pair[0],
+                pair[1],
+                &mut consumed,
+                out,
             );
         }
     }
-
-    #[test]
-    fn works_for_python() {
-        let src = r#"
-def alpha(x):
-    if x > 0:
-        return 1
-    elif x < 0:
-        return -1
-    else:
-        return 0
-
-def beta(y):
-    if y > 0:
-        return 1
-    elif y < 0:
-        return -1
-    else:
-        return 0
-"#;
-        let parsed = parse(src, Language::Python).unwrap();
-        let clones = find_clones(&parsed, 15);
-        assert!(!clones.is_empty(), "{clones:?}");
-    }
 }
+
+fn build_cross_file_hash_groups(
+    streams: &[Vec<Token>],
+    min_tokens: usize,
+) -> Vec<Vec<(usize, usize)>> {
+    let mut by_hash: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+    for (file_local, tokens) in streams.iter().enumerate() {
+        if tokens.len() < min_tokens {
+            continue;
+        }
+        for start in 0..=(tokens.len() - min_tokens) {
+            let h = window_hash(tokens, start, min_tokens);
+            by_hash.entry(h).or_default().push((file_local, start));
+        }
+    }
+    let mut groups: Vec<Vec<(usize, usize)>> =
+        by_hash.into_values().filter(|g| g.len() >= 2).collect();
+    for g in groups.iter_mut() {
+        g.sort();
+    }
+    groups.sort_by_key(|g| g[0]);
+    groups
+}
+
+struct CrossPairCtx<'a> {
+    parsed: &'a [(PathBuf, &'a ParsedFile)],
+    indices: &'a [usize],
+    streams: &'a [Vec<Token>],
+    min_tokens: usize,
+}
+
+fn try_record_cross_pair(
+    ctx: CrossPairCtx<'_>,
+    a: (usize, usize),
+    b: (usize, usize),
+    consumed: &mut [Vec<bool>],
+    out: &mut Vec<CrossFileClonePair>,
+) {
+    let (a_file, a_pos) = a;
+    let (b_file, b_pos) = b;
+    if a_file == b_file || consumed[a_file][a_pos] || consumed[b_file][b_pos] {
+        return;
+    }
+    let s_a = &ctx.streams[a_file];
+    let s_b = &ctx.streams[b_file];
+    if !equal_window_cross(s_a, a_pos, s_b, b_pos, ctx.min_tokens) {
+        return;
+    }
+    let len = extend_match_cross(s_a, a_pos, s_b, b_pos, ctx.min_tokens);
+    for k in 0..len {
+        consumed[a_file][a_pos + k] = true;
+        consumed[b_file][b_pos + k] = true;
+    }
+    out.push(CrossFileClonePair {
+        file_a: ctx.parsed[ctx.indices[a_file]].0.clone(),
+        a: span(s_a, a_pos, len),
+        file_b: ctx.parsed[ctx.indices[b_file]].0.clone(),
+        b: span(s_b, b_pos, len),
+        token_count: len as u32,
+    });
+}
+
+fn equal_window_cross(a: &[Token], a_pos: usize, b: &[Token], b_pos: usize, len: usize) -> bool {
+    (0..len).all(|k| a[a_pos + k].kind_hash == b[b_pos + k].kind_hash)
+}
+
+/// Forward extension across two separate token streams. Stops at the end
+/// of *either* file (no cross-file token bleed) or at first divergence.
+fn extend_match_cross(
+    a: &[Token],
+    a_pos: usize,
+    b: &[Token],
+    b_pos: usize,
+    min_len: usize,
+) -> usize {
+    let max_len = (a.len() - a_pos).min(b.len() - b_pos);
+    let mut len = min_len;
+    while len < max_len && a[a_pos + len].kind_hash == b[b_pos + len].kind_hash {
+        len += 1;
+    }
+    len
+}
+
+#[cfg(test)]
+#[path = "clones_tests.rs"]
+mod tests;

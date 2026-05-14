@@ -14,7 +14,7 @@ mod source;
 mod verdict;
 
 pub use baseline::BaselineDelta;
-pub use evaluator::{EvalContext, Evaluator};
+pub use evaluator::{CorpusEvaluator, EvalContext, Evaluator};
 pub use finding::{Finding, Severity};
 pub use report::{Report, SeverityCounts};
 pub use rule::{Category, Rule, RuleSource, Scope};

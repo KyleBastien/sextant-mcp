@@ -1,8 +1,8 @@
 use sextant_config::SizeRuleConfig;
 use sextant_core::{EvalContext, Evaluator, Finding, Rule, Severity, SourceFile};
-use sextant_lang::{function_ranges, parse, Language};
 
 use crate::file_length::rule_from_parsed;
+use crate::function_walker::for_each_function;
 use crate::loader::ParsedRule;
 
 pub struct FnLengthRule {
@@ -27,60 +27,28 @@ impl Evaluator for FnLengthRule {
     }
 
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
-        let Some(hint) = file.language_hint() else {
-            return Vec::new();
-        };
-        let Some(lang) = Language::from_hint(hint) else {
-            return Vec::new();
-        };
-        let parsed = match parse(file.contents.clone(), lang) {
-            Ok(p) => p,
-            Err(err) => {
-                tracing::debug!(?err, path=?file.path, "parse failed");
-                return Vec::new();
-            }
-        };
-        let fns = match function_ranges(&parsed) {
-            Ok(f) => f,
-            Err(err) => {
-                tracing::debug!(?err, path=?file.path, "function_ranges failed");
-                return Vec::new();
-            }
-        };
-
-        let path = file.relative_to(ctx.repo_root);
-        let mut out = Vec::new();
-        for f in fns {
+        for_each_function(file, ctx, |f, path| {
             let len = f.line_count();
-            if len >= self.error {
-                out.push(
-                    Finding::new(
-                        &self.rule.id,
-                        Severity::Error,
-                        path.clone(),
-                        format!(
-                            "Function `{}` is {len} lines (threshold: {}). Extract helpers.",
-                            f.name, self.error
-                        ),
-                    )
-                    .spanning(f.start_line, f.end_line),
-                );
+            let (severity, threshold, suffix) = if len >= self.error {
+                (Severity::Error, self.error, "Extract helpers.")
             } else if len >= self.warn {
-                out.push(
-                    Finding::new(
-                        &self.rule.id,
-                        Severity::Warn,
-                        path.clone(),
-                        format!(
-                            "Function `{}` is {len} lines (threshold: {}). Consider extracting.",
-                            f.name, self.warn
-                        ),
-                    )
-                    .spanning(f.start_line, f.end_line),
-                );
-            }
-        }
-        out
+                (Severity::Warn, self.warn, "Consider extracting.")
+            } else {
+                return None;
+            };
+            Some(
+                Finding::new(
+                    &self.rule.id,
+                    severity,
+                    path.to_path_buf(),
+                    format!(
+                        "Function `{}` is {len} lines (threshold: {threshold}). {suffix}",
+                        f.name
+                    ),
+                )
+                .spanning(f.start_line, f.end_line),
+            )
+        })
     }
 }
 

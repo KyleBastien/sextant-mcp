@@ -6,9 +6,13 @@
 //! survives the diff filter, so a developer only sees the side of the
 //! clone they're touching.
 
+use std::path::PathBuf;
+
 use sextant_config::DuplicationRuleConfig;
-use sextant_core::{EvalContext, Evaluator, Finding, Rule, SourceFile};
-use sextant_lang::{find_clones, parse, ClonePair, Language};
+use sextant_core::{CorpusEvaluator, EvalContext, Evaluator, Finding, Rule, SourceFile};
+use sextant_lang::{
+    find_clones, find_cross_file_clones, parse, ClonePair, CrossFileClonePair, Language, ParsedFile,
+};
 
 use crate::file_length::rule_from_parsed;
 use crate::loader::ParsedRule;
@@ -16,6 +20,7 @@ use crate::loader::ParsedRule;
 pub struct DuplicationRule {
     rule: Rule,
     min_tokens: usize,
+    cross_file_min_tokens: usize,
 }
 
 impl DuplicationRule {
@@ -23,6 +28,7 @@ impl DuplicationRule {
         Self {
             rule: rule_from_parsed(parsed),
             min_tokens: cfg.min_tokens as usize,
+            cross_file_min_tokens: cfg.cross_file_min_tokens as usize,
         }
     }
 }
@@ -53,6 +59,78 @@ impl Evaluator for DuplicationRule {
     }
 }
 
+impl CorpusEvaluator for DuplicationRule {
+    fn rule(&self) -> &Rule {
+        &self.rule
+    }
+
+    fn evaluate_corpus(&self, files: &[SourceFile], ctx: &EvalContext<'_>) -> Vec<Finding> {
+        let owned = parse_corpus(files);
+        let refs: Vec<(PathBuf, &ParsedFile)> =
+            owned.iter().map(|(p, pf)| (p.clone(), pf)).collect();
+        let pairs = find_cross_file_clones(&refs, self.cross_file_min_tokens);
+        let mut out = Vec::with_capacity(pairs.len() * 2);
+        for c in pairs {
+            push_cross_pair(&self.rule, ctx.repo_root, &c, &mut out);
+        }
+        out
+    }
+}
+
+fn parse_corpus(files: &[SourceFile]) -> Vec<(PathBuf, ParsedFile)> {
+    let mut out = Vec::new();
+    for file in files {
+        let Some(hint) = file.language_hint() else {
+            continue;
+        };
+        let Some(lang) = Language::from_hint(hint) else {
+            continue;
+        };
+        if let Ok(parsed) = parse(file.contents.clone(), lang) {
+            out.push((file.path.clone(), parsed));
+        }
+    }
+    out
+}
+
+fn push_cross_pair(
+    rule: &Rule,
+    repo_root: &std::path::Path,
+    c: &CrossFileClonePair,
+    out: &mut Vec<Finding>,
+) {
+    let rel_a = c
+        .file_a
+        .strip_prefix(repo_root)
+        .unwrap_or(&c.file_a)
+        .to_path_buf();
+    let rel_b = c
+        .file_b
+        .strip_prefix(repo_root)
+        .unwrap_or(&c.file_b)
+        .to_path_buf();
+    let msg_a = format!(
+        "Duplicate of {} lines {}-{} ({} tokens). Extract a helper.",
+        rel_b.display(),
+        c.b.start_line,
+        c.b.end_line,
+        c.token_count
+    );
+    let msg_b = format!(
+        "Duplicate of {} lines {}-{} ({} tokens). Extract a helper.",
+        rel_a.display(),
+        c.a.start_line,
+        c.a.end_line,
+        c.token_count
+    );
+    out.push(
+        Finding::new(&rule.id, rule.severity, rel_a, msg_a).spanning(c.a.start_line, c.a.end_line),
+    );
+    out.push(
+        Finding::new(&rule.id, rule.severity, rel_b, msg_b).spanning(c.b.start_line, c.b.end_line),
+    );
+}
+
 fn push_pair(rule: &Rule, path: &std::path::Path, c: &ClonePair, out: &mut Vec<Finding>) {
     let token_count = c.token_count;
     let msg_a = format!(
@@ -74,91 +152,5 @@ fn push_pair(rule: &Rule, path: &std::path::Path, c: &ClonePair, out: &mut Vec<F
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::loader::parse_rule_md;
-    use sextant_core::RuleSource;
-
-    fn parsed_for_test() -> ParsedRule {
-        parse_rule_md(
-            r#"---
-id: builtin.duplication.tokens
-name: "Token duplication"
-description: "x"
-severity: warn
-category: duplication
-languages: [rust, python]
-evaluator: { type: builtin, name: tokens_dup }
----
-"#,
-            RuleSource::Builtin,
-            None,
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn flags_two_findings_per_clone() {
-        let cfg = DuplicationRuleConfig { min_tokens: 20 };
-        let rule = DuplicationRule::from_parsed(parsed_for_test(), &cfg);
-        let src = r#"
-fn one() {
-    let a = 1;
-    let b = 2;
-    let c = 3;
-    let d = 4;
-    let e = 5;
-}
-
-fn two() {
-    let a = 1;
-    let b = 2;
-    let c = 3;
-    let d = 4;
-    let e = 5;
-}
-"#;
-        let file = SourceFile::new("a.rs", src);
-        let root = std::env::current_dir().unwrap();
-        let f = rule.evaluate_file(
-            &file,
-            &EvalContext {
-                repo_root: root.as_path(),
-            },
-        );
-        assert_eq!(f.len(), 2, "{f:?}");
-        // Each finding points at the other's lines in its message.
-        assert!(f[0].message.contains("lines"));
-        assert!(f[1].message.contains("lines"));
-    }
-
-    #[test]
-    fn quiet_when_no_duplication() {
-        let cfg = DuplicationRuleConfig::default();
-        let rule = DuplicationRule::from_parsed(parsed_for_test(), &cfg);
-        let file = SourceFile::new("a.rs", "fn ok() { let x = 1; }\n");
-        let root = std::env::current_dir().unwrap();
-        let f = rule.evaluate_file(
-            &file,
-            &EvalContext {
-                repo_root: root.as_path(),
-            },
-        );
-        assert!(f.is_empty());
-    }
-
-    #[test]
-    fn skips_unsupported_languages() {
-        let cfg = DuplicationRuleConfig { min_tokens: 5 };
-        let rule = DuplicationRule::from_parsed(parsed_for_test(), &cfg);
-        let file = SourceFile::new("a.txt", "anything\nat all\n");
-        let root = std::env::current_dir().unwrap();
-        let f = rule.evaluate_file(
-            &file,
-            &EvalContext {
-                repo_root: root.as_path(),
-            },
-        );
-        assert!(f.is_empty());
-    }
-}
+#[path = "duplication_tests.rs"]
+mod tests;

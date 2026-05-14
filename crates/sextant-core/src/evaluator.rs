@@ -10,9 +10,18 @@ pub struct EvalContext<'a> {
 }
 
 /// A rule implementation. Evaluators receive a single `SourceFile` and
-/// emit zero or more findings. Repo-scoped rules will receive a different
-/// trait variant in M5; for M1 we only need file-level evaluation.
+/// emit zero or more findings.
 pub trait Evaluator: Send + Sync {
     fn rule(&self) -> &Rule;
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding>;
+}
+
+/// Repo-scoped rule: sees the whole corpus at once. Dispatched after the
+/// per-file pass so cross-file checks (clones across files, public API
+/// without a test anywhere in the tree) can correlate across boundaries.
+/// A rule may implement both [`Evaluator`] and [`CorpusEvaluator`] when
+/// it has work to do at both levels.
+pub trait CorpusEvaluator: Send + Sync {
+    fn rule(&self) -> &Rule;
+    fn evaluate_corpus(&self, files: &[SourceFile], ctx: &EvalContext<'_>) -> Vec<Finding>;
 }

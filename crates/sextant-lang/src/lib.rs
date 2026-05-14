@@ -10,7 +10,7 @@ mod parser;
 mod ranges;
 mod test_witness;
 
-pub use clones::{find_clones, ClonePair, CloneSpan};
+pub use clones::{find_clones, find_cross_file_clones, ClonePair, CloneSpan, CrossFileClonePair};
 pub use complexity::{function_complexity, FunctionComplexity};
 pub use parser::{parse, LangError, Language, ParsedFile};
 pub use ranges::{function_ranges, FunctionRange};

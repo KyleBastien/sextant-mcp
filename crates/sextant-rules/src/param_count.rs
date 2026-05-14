@@ -1,8 +1,8 @@
 use sextant_config::SizeRuleConfig;
 use sextant_core::{EvalContext, Evaluator, Finding, Rule, Severity, SourceFile};
-use sextant_lang::{function_ranges, parse, Language};
 
 use crate::file_length::rule_from_parsed;
+use crate::function_walker::for_each_function;
 use crate::loader::ParsedRule;
 
 pub struct ParamCountRule {
@@ -27,53 +27,31 @@ impl Evaluator for ParamCountRule {
     }
 
     fn evaluate_file(&self, file: &SourceFile, ctx: &EvalContext<'_>) -> Vec<Finding> {
-        let Some(hint) = file.language_hint() else {
-            return Vec::new();
-        };
-        let Some(lang) = Language::from_hint(hint) else {
-            return Vec::new();
-        };
-        let parsed = match parse(file.contents.clone(), lang) {
-            Ok(p) => p,
-            Err(_) => return Vec::new(),
-        };
-        let fns = match function_ranges(&parsed) {
-            Ok(f) => f,
-            Err(_) => return Vec::new(),
-        };
-
-        let path = file.relative_to(ctx.repo_root);
-        let mut out = Vec::new();
-        for f in fns {
-            if f.param_count >= self.error {
-                out.push(
-                    Finding::new(
-                        &self.rule.id,
-                        Severity::Error,
-                        path.clone(),
-                        format!(
-                            "Function `{}` takes {} parameters (threshold: {}). Group related parameters into a struct.",
-                            f.name, f.param_count, self.error
-                        ),
-                    )
-                    .spanning(f.start_line, f.end_line),
-                );
+        for_each_function(file, ctx, |f, path| {
+            let (severity, threshold, suffix) = if f.param_count >= self.error {
+                (
+                    Severity::Error,
+                    self.error,
+                    "Group related parameters into a struct.",
+                )
             } else if f.param_count >= self.warn {
-                out.push(
-                    Finding::new(
-                        &self.rule.id,
-                        Severity::Warn,
-                        path.clone(),
-                        format!(
-                            "Function `{}` takes {} parameters (threshold: {}). Consider grouping.",
-                            f.name, f.param_count, self.warn
-                        ),
-                    )
-                    .spanning(f.start_line, f.end_line),
-                );
-            }
-        }
-        out
+                (Severity::Warn, self.warn, "Consider grouping.")
+            } else {
+                return None;
+            };
+            Some(
+                Finding::new(
+                    &self.rule.id,
+                    severity,
+                    path.to_path_buf(),
+                    format!(
+                        "Function `{}` takes {} parameters (threshold: {threshold}). {suffix}",
+                        f.name, f.param_count
+                    ),
+                )
+                .spanning(f.start_line, f.end_line),
+            )
+        })
     }
 }
 

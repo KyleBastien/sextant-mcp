@@ -19,8 +19,8 @@ use sextant_diff::files_at_ref;
 use sextant_rules::RuleSet;
 
 use crate::{
-    compute_diff, filter_to_diff, judge_setup, source_files_from_diff, DiffOptions, EngineError,
-    GradeOptions,
+    collect_source_files, compute_diff, filter_to_diff, judge_setup, source_files_from_diff,
+    DiffOptions, EngineError, GradeOptions,
 };
 
 /// Output of [`grade_pr`].
@@ -142,8 +142,16 @@ fn build_baseline_report(
 }
 
 fn grade_head(env: &GradeEnv<'_>, diff: &sextant_diff::DiffSet) -> Vec<Finding> {
-    let files = source_files_from_diff(env.repo_root, diff, env.exclude);
-    let raw = env.ruleset.grade_files(&files, env.ctx);
+    let diff_files = source_files_from_diff(env.repo_root, diff, env.exclude);
+    let mut raw = env.ruleset.grade_per_file(&diff_files, env.ctx);
+    // Corpus pass needs the whole tree so cross-file rules can find their
+    // counterparts in unchanged files; filter_to_diff then drops findings
+    // whose anchor lives outside the diff.
+    if let Ok(all_files) =
+        collect_source_files(env.repo_root, &[env.repo_root.to_path_buf()], env.exclude)
+    {
+        raw.extend(env.ruleset.grade_corpus(&all_files, env.ctx));
+    }
     filter_to_diff(raw, diff)
 }
 
