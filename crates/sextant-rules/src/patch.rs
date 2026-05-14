@@ -114,5 +114,4 @@ mod tests {
         let d = create_file_diff(&p, "alpha");
         assert!(d.contains("\\ No newline at end of file"));
     }
-
 }
