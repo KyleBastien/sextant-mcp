@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.14](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.13...v0.1.14) (2026-05-14)
+
+
+### Features
+
+* **rules:** pub-fn-untested accepts peer-file tests ([#44](https://github.com/KyleBastien/sextant-mcp/issues/44)) ([8f0783a](https://github.com/KyleBastien/sextant-mcp/commit/8f0783a9ae95fc290b50d1a86bdc31373934e1a7))
+
 ## [0.1.13](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.12...v0.1.13) (2026-05-14)
 
 
