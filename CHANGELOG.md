@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.15...v0.1.16) (2026-05-26)
+
+
+### Features
+
+* **plugin:** drop Stop hook, document git pre-commit gate ([#47](https://github.com/KyleBastien/sextant-mcp/issues/47)) ([999fedb](https://github.com/KyleBastien/sextant-mcp/commit/999fedb9c4109589ad4cd9244d89ca39212ebede))
+
 ## [0.1.15](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.14...v0.1.15) (2026-05-14)
 
 
