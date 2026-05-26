@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.17](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.16...v0.1.17) (2026-05-26)
+
+
+### Features
+
+* **config:** exclude Markdown files from grading ([#49](https://github.com/KyleBastien/sextant-mcp/issues/49)) ([e597416](https://github.com/KyleBastien/sextant-mcp/commit/e597416223d18f3baf0685dcb08fbc0341604e15))
+
 ## [0.1.16](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.15...v0.1.16) (2026-05-26)
 
 
