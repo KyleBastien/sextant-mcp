@@ -8,9 +8,9 @@ sidebar:
 The Sextant plugin doesn't wire any Claude Code hooks
 (`SessionStart`, `PostToolUse`, `Stop`). Earlier versions did — they
 produced dead-end loops and pushed feedback into the wrong place. The
-right integration point is **`git commit`**: the rest of the toolchain
-already understands the bypass semantics, and the gate runs once per
-commit instead of once per keystroke.
+right integration point is **`git commit`**: the gate runs once per
+commit instead of once per keystroke, and a failing grade aborts the
+commit outright.
 
 The agent still grades on demand via the MCP server (`grade_diff`,
 `grade_files`) and the `sextant-grade` /
@@ -21,7 +21,8 @@ skills tell it when. The pre-commit hook catches anything the agent
 A sample script ships at `plugin/hooks/pre-commit.sh` in the
 [sextant-mcp repo](https://github.com/kylebastien/sextant-mcp). It
 runs `sextant grade --diff --working-tree` and aborts the commit on
-any finding — `git commit --no-verify` is the standard bypass.
+any finding. The script intentionally ships **without** an env-var
+escape hatch — if the gate fires, fix the findings.
 
 ## What the sample script does
 
@@ -36,9 +37,10 @@ sextant grade --diff --working-tree --no-llm --fail-on warn
 - `--fail-on warn` — exit non-zero on any warn or error finding,
   matching a strict gate. See [tuning](#tuning) below.
 
-The script also short-circuits when `sextant` isn't on `PATH`, when
-the repo has no `.sextant/` directory, or when `SEXTANT_SKIP_PRECOMMIT=1`
-is set — none of those should block a commit.
+If the repo has no `.sextant/` directory the script exits cleanly —
+nothing to grade. If `sextant` isn't on `PATH` the script fails the
+commit, on the principle that a missing grader shouldn't be a
+silent bypass. Install Sextant somewhere on `PATH` before committing.
 
 ## Installing
 
@@ -105,17 +107,17 @@ The verdict still depends on `[verdict]` thresholds in
 `.sextant/config.toml` — `--fail-on` only controls how the CLI maps
 the report to an exit code.
 
-## Bypassing
+## No escape hatch
 
-- **Per commit:** `git commit --no-verify`. The standard escape hatch
-  for any git hook.
-- **Per session:** `export SEXTANT_SKIP_PRECOMMIT=1`. The sample script
-  reads this and exits 0 immediately.
-- **Permanent off:** `chmod -x .git/hooks/pre-commit` or remove the
-  symlink.
+The sample script does not honour any `SEXTANT_SKIP_*` env var, has
+no `--advisory` flag, and the in-script bypass that earlier drafts
+included has been removed. The gate is strict by design: when it
+fires, the response is to fix the underlying issue, not to skip the
+grade.
 
-Use bypasses sparingly. The whole point is to make the strict path
-the default.
+If the rule that fired is genuinely too strict, calibrate the rule
+itself (lower the severity, tighten the regex, refine the LLM
+prompt) — that's the only sanctioned way to make the gate quieter.
 
 ## Combining with CI
 

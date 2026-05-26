@@ -58,13 +58,13 @@ and `Stop` hooks. They're gone:
 - The `PostToolUse` hook surfaced findings the agent could just talk
   past, and burned tokens every keystroke.
 - `git commit` is the natural integration point for "this diff is
-  not allowed to land" — the rest of the toolchain already
-  understands `--no-verify` as the bypass.
+  not allowed to land" — the gate runs once per commit and aborts
+  the commit outright when it fires.
 
 The replacement is the [pre-commit
 hook](/sextant-mcp/plugin/precommit-hook/) — same `grade_diff`
-check, ran at the right moment, with bypass semantics the team
-already knows.
+check, ran at the right moment, strict by design with no env-var
+escape hatch.
 
 ## Authoring
 
@@ -88,10 +88,10 @@ inherit it.
 commit. The first commit of a repo has no `HEAD~1`; Sextant returns a
 friendly "no default base" error and the hook exits silently.
 
-**Pre-commit hook blocked the commit.** Either fix the findings,
-bypass with `git commit --no-verify`, or set `SEXTANT_SKIP_PRECOMMIT=1`
-for the session. See
-[Pre-commit hook → Bypassing](/sextant-mcp/plugin/precommit-hook/#bypassing).
+**Pre-commit hook blocked the commit.** Fix the findings. The gate is
+strict by design — there is no env-var escape hatch. If a rule fires
+repeatedly on something that isn't a real problem, calibrate the
+rule rather than trying to skip the grade.
 
 ## See also
 

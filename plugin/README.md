@@ -60,9 +60,9 @@ descriptions match the user's request.
 The plugin does **not** wire any Claude Code hooks
 (`SessionStart`, `PostToolUse`, `Stop`). Earlier versions did — they
 produced dead-end loops and pushed feedback into the wrong place. The
-right integration point is `git commit`: the rest of the toolchain
-already understands the bypass semantics, and the gate runs once per
-commit instead of once per keystroke.
+right integration point is `git commit`: the gate runs once per
+commit instead of once per keystroke, and a failing grade aborts the
+commit outright.
 
 The agent still grades on demand via the MCP server (`grade_diff`,
 `grade_files`) and the `sextant-grade` / `sextant-self-correct`
@@ -120,10 +120,10 @@ repos:
   while calibrating new rules.
 - Drop `--no-llm` to include LLM-evaluated rules (slower, needs API
   keys).
-- `SEXTANT_SKIP_PRECOMMIT=1` short-circuits the script to a no-op when
-  you need to bypass it for a session.
-- `git commit --no-verify` is the per-commit escape hatch — use
-  sparingly.
+
+The script ships **without** an env-var escape hatch — there is no
+opt-out flag to flip. If the gate fires, fix the findings or
+calibrate the rules.
 
 ## Authoring
 
@@ -148,7 +148,8 @@ inherit it.
 commit. The first commit of a repo has no `HEAD~1`; Sextant returns
 a friendly "no default base" error and the hook exits silently.
 
-**Pre-commit hook blocked the commit and I need to land something
-dirty.** Bypass once with `git commit --no-verify`, or disable the
-hook for a session with `SEXTANT_SKIP_PRECOMMIT=1`. Calibrate the
-rules so the gate fires only on things you actually want blocked.
+**Pre-commit hook blocked the commit.** Fix the findings. The gate is
+strict by design and has no escape hatch — if it fires repeatedly on
+something that isn't a real problem, calibrate the rules (lower
+severity, narrow the regex, tighten the LLM prompt) rather than
+trying to skip the gate.

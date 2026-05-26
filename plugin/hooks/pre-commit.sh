@@ -6,26 +6,19 @@
 # (chmod +x) or wire it into husky / pre-commit framework. See the
 # plugin README for installation options.
 #
-# Behaviour:
-#   * skips silently if `sextant` isn't on PATH or the repo has no
-#     `.sextant/` directory
-#   * runs `sextant grade --diff --working-tree --no-llm` and exits with
-#     its status — non-zero blocks the commit
-#   * `--no-llm` keeps it fast and offline; flip to LLM-aware grading by
-#     dropping the flag if you want
+# Behaviour: runs `sextant grade --diff --working-tree --no-llm
+# --fail-on warn` and exits with its status — non-zero blocks the
+# commit. `--no-llm` keeps it fast and offline; flip to LLM-aware
+# grading by dropping the flag if you want.
 #
-# Bypass with `git commit --no-verify` when you really need to land
-# something dirty. Use sparingly.
+# The gate is intentionally strict: there is no env-var escape hatch.
+# Fix the findings.
 
 set -euo pipefail
 
-if [ "${SEXTANT_SKIP_PRECOMMIT:-0}" = "1" ]; then
-  exit 0
-fi
-
 if ! command -v sextant >/dev/null 2>&1; then
-  echo "sextant: not on PATH, skipping pre-commit grade" >&2
-  exit 0
+  echo "sextant: not on PATH, install it before committing" >&2
+  exit 1
 fi
 
 if [ ! -d .sextant ]; then
