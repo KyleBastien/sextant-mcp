@@ -69,13 +69,16 @@ cache_dir = ".sextant/cache/llm"
 
 ## Skipped paths
 
-Sextant never grades generated or vendored files. The skip list is
-hardcoded into the engine — there is no `[paths]` section to edit:
+Sextant never grades generated, vendored, or prose files. The skip
+list is hardcoded into the engine — there is no `[paths]` section to
+edit:
 
 - `**/Cargo.lock`, `**/package-lock.json`, `**/yarn.lock`,
   `**/pnpm-lock.yaml`, `**/poetry.lock`, `**/uv.lock`
 - `**/target/**`, `**/node_modules/**`, `**/dist/**`, `**/build/**`
 - `**/.git/**`, `**/.sextant/cache/**`
+- `**/*.md`, `**/*.markdown`, `**/*.mdx` — Markdown is prose; the
+  built-in size/complexity rules are tuned for code.
 
 Hiding source from a rule by excluding paths is intentionally not
 supported. If a rule fires on code that legitimately shouldn't trigger
