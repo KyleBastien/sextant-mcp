@@ -31,7 +31,7 @@ rust-version = "1.75"
 # doc comment.
 [package]
 name = "sextant"
-version = "0.1.16"
+version = "0.1.17"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
