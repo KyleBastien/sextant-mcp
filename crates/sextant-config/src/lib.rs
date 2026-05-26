@@ -142,8 +142,14 @@ impl Default for DuplicationRuleConfig {
 
 /// The hardcoded list of paths sextant never grades — generated and
 /// vendored files (`Cargo.lock`, build outputs, dependency directories,
-/// `.git`). Baked into the engine so the choice of what to skip is not a
-/// configuration knob agents can edit to hide findings.
+/// `.git`) plus prose files (Markdown). Baked into the engine so the
+/// choice of what to skip is not a configuration knob agents can edit
+/// to hide findings.
+///
+/// Markdown is excluded because the built-in size/complexity rules are
+/// tuned for code, not prose. A long `README.md` or `CLAUDE.md` is a
+/// documentation choice, not a code-quality problem the size rule is
+/// meant to flag.
 const DEFAULT_EXCLUDES: &[&str] = &[
     "**/Cargo.lock",
     "**/package-lock.json",
@@ -157,6 +163,9 @@ const DEFAULT_EXCLUDES: &[&str] = &[
     "**/build/**",
     "**/.git/**",
     "**/.sextant/cache/**",
+    "**/*.md",
+    "**/*.markdown",
+    "**/*.mdx",
 ];
 
 /// Compile the hardcoded skip list into a `GlobSet`. Sextant never grades
@@ -315,6 +324,16 @@ mod tests {
         assert!(m.is_match("node_modules/some-pkg/index.js"));
         assert!(!m.is_match("src/main.rs"));
         assert!(!m.is_match("crates/sextant-core/src/lib.rs"));
+    }
+
+    #[test]
+    fn default_path_matcher_excludes_markdown_files() {
+        let m = default_exclude_matcher().unwrap();
+        assert!(m.is_match("README.md"));
+        assert!(m.is_match("CLAUDE.md"));
+        assert!(m.is_match("docs/guide.markdown"));
+        assert!(m.is_match("packages/foo/notes.mdx"));
+        assert!(!m.is_match("src/main.rs"));
     }
 
     #[test]
