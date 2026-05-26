@@ -85,6 +85,7 @@ to broaden or narrow when each fires.
 
 - [Commands](/sextant-mcp/plugin/commands/) — explicit user-invoked
   commands.
-- [Hooks](/sextant-mcp/plugin/hooks/) — automatic grading.
+- [Pre-commit hook](/sextant-mcp/plugin/precommit-hook/) — the
+  commit-time gate.
 - [Authoring rules](/sextant-mcp/rules/authoring/) — full schema for
   the `sextant-author-rule` skill.

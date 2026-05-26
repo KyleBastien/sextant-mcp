@@ -58,6 +58,6 @@ Top-level fields:
 
 - During exploration (you haven't written anything yet).
 - For docs-only edits in `.md` files where no rules apply.
-- After every keystroke — the `PostToolUse` hook already does this for
-  you. Calling explicitly is for end-of-task confirmations or when the
-  hook has been disabled.
+- After every keystroke. Wait until you've finished a coherent change
+  — `grade_diff` is cheap but not free, and findings on half-written
+  code aren't actionable.

@@ -65,9 +65,8 @@ omitted — it's often long, and most callers just want metadata. Use
 - As context for an `explain_rule` follow-up — the agent picks the id
   here, then asks for details.
 
-The Claude Code plugin's `SessionStart` hook calls this once per
-session and prints a summary, so the agent knows what it's being
-graded against.
+Useful as a first call in a session — the agent learns what it's
+being graded against before it edits anything.
 
 ## Examples
 

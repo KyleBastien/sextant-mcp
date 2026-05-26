@@ -2,8 +2,8 @@
 
 Bundles [Sextant](https://github.com/kylebastien/sextant-mcp) into a
 Claude Code session: the MCP server, three skills the agent
-auto-loads, three slash commands, and three hooks that turn grading
-into a live signal during the edit loop.
+auto-loads, three slash commands, and a sample git pre-commit hook
+that blocks commits on a dirty grade.
 
 ## Install
 
@@ -24,7 +24,7 @@ Then, from a Claude Code session:
 ```
 
 The plugin lives at `plugin/` in this repo, so the marketplace is the
-repo itself. After install, restart the session to pick up hooks.
+repo itself.
 
 ## What the plugin does
 
@@ -55,81 +55,101 @@ descriptions match the user's request.
 | `/sextant-init` | Run `sextant init` in the current repo. |
 | `/sextant-explain <rule-id>` | Print the markdown body for a rule. |
 
-### Hooks
+### Git pre-commit hook
 
-The hooks are the reason this is a plugin and not just an MCP server.
+The plugin does **not** wire any Claude Code hooks
+(`SessionStart`, `PostToolUse`, `Stop`). Earlier versions did — they
+produced dead-end loops and pushed feedback into the wrong place. The
+right integration point is `git commit`: the gate runs once per
+commit instead of once per keystroke, and a failing grade aborts the
+commit outright.
 
-#### `SessionStart`
+The agent still grades on demand via the MCP server (`grade_diff`,
+`grade_files`) and the `sextant-grade` / `sextant-self-correct`
+skills tell it when. The pre-commit hook catches anything the agent
+(or you) missed.
 
-Prints a one-line summary of currently loaded rules so the agent knows
-what it's being graded against. No-op when Sextant isn't on `PATH` or
-the repo has no rules.
-
-#### `PostToolUse` (Edit / Write / MultiEdit)
-
-After every edit, runs `sextant grade --diff --working-tree --no-llm`
-in the background and feeds findings back to the agent as additional
-context. Stays silent on a clean grade. `--no-llm` keeps it fast and
-offline; explicit grades via the slash command can opt back in.
-
-Skipped automatically when `.sextant/` doesn't exist — new repos
-don't pay the cost on every edit.
-
-#### `Stop`
-
-Before the agent ends its turn, runs the same `grade_diff` once more.
-
-- **Default (advisory):** surface the verdict and findings as
-  context. Don't block stop. The agent can volunteer one more pass.
-- **Enforcing:** set `SEXTANT_ENFORCE_ON_STOP=1` in your shell or
-  Claude Code env. A `request_changes` verdict now *blocks* the stop
-  and feeds the findings back as the reason — Claude continues
-  iterating until the verdict is `approve` or it gives up.
-
-Pick advisory if you want Sextant as a code-review companion;
-enforcing if you want it as a guardrail.
-
-## Disabling pieces
-
-Plugin hooks are all-or-nothing in the manifest, so to skip individual
-hooks rename them inside your fork or set guards inline. The simplest
-escape hatch:
+A sample script lives at `plugin/hooks/pre-commit.sh`. It runs:
 
 ```bash
-# Disable post-edit grading without uninstalling the plugin.
-export SEXTANT_DISABLE_POST_EDIT=1
+sextant grade --diff --working-tree --no-llm --fail-on warn
 ```
 
-(The hook scripts respect that env var as a no-op short-circuit. Same
-pattern for `SEXTANT_DISABLE_STOP=1` and `SEXTANT_DISABLE_SESSION_START=1`.)
+…and exits non-zero on any warn or error, so `git commit` aborts when
+the gate fires.
+
+**Install (symlink from the plugin checkout):**
+
+```bash
+ln -sf ../../plugin/hooks/pre-commit.sh .git/hooks/pre-commit
+```
+
+…or copy it if you'd rather not depend on the symlink:
+
+```bash
+cp plugin/hooks/pre-commit.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+**Install via [husky](https://typicode.github.io/husky/):**
+
+```bash
+npx husky add .husky/pre-commit \
+  "sextant grade --diff --working-tree --no-llm --fail-on warn"
+```
+
+**Install via the [pre-commit framework](https://pre-commit.com):**
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: sextant
+        name: sextant
+        entry: sextant grade --diff --working-tree --no-llm --fail-on warn
+        language: system
+        pass_filenames: false
+```
+
+**Tuning:**
+
+- `--fail-on error` — only `error`-severity findings block; warns are
+  advisory.
+- `--fail-on never` — hook prints findings but never blocks. Useful
+  while calibrating new rules.
+- Drop `--no-llm` to include LLM-evaluated rules (slower, needs API
+  keys).
+
+The script ships **without** an env-var escape hatch — there is no
+opt-out flag to flip. If the gate fires, fix the findings or
+calibrate the rules.
 
 ## Authoring
 
 Skills live at `plugin/skills/<name>/SKILL.md`, commands at
-`plugin/commands/<name>.md`, hooks at `plugin/hooks/*.sh`. Each is
-plain markdown or bash — no compile step. After editing, reload the
-plugin (`/plugin reload sextant`) or restart the session.
+`plugin/commands/<name>.md`, the pre-commit script at
+`plugin/hooks/pre-commit.sh`. Each is plain markdown or bash — no
+compile step. After editing skills or commands, reload the plugin
+(`/plugin reload sextant`) or restart the session.
 
 See `plugin/skills/sextant-author-rule/SKILL.md` for the rule-file
 schema.
 
 ## Troubleshooting
 
-**"sextant: command not found" in hook output.** The plugin host
-inherits your shell `PATH`. Either install sextant to a directory
-already on `PATH` (`~/.local/bin`, `/usr/local/bin`) or add the
-install dir explicitly.
+**"sextant: command not found" when committing.** Your shell `PATH`
+doesn't include the install dir. Either install sextant to a
+directory already on `PATH` (`~/.local/bin`, `/usr/local/bin`) or add
+the install dir to your shell rc so commits launched from `git`
+inherit it.
 
-**Hooks fire but produce no output.** That's the silent-on-clean
-behavior — they only speak when there are findings. Run
-`sextant grade --diff --working-tree` manually to confirm.
-
-**`HEAD~1` errors on a fresh repo.** The diff hook needs a base
+**`HEAD~1` errors on a fresh repo.** The diff grade needs a base
 commit. The first commit of a repo has no `HEAD~1`; Sextant returns
 a friendly "no default base" error and the hook exits silently.
 
-**Enforce mode blocked stop and the agent is stuck.** Either fix the
-findings or unset `SEXTANT_ENFORCE_ON_STOP` for one turn:
-```bash
-SEXTANT_ENFORCE_ON_STOP=0 claude
-```
+**Pre-commit hook blocked the commit.** Fix the findings. The gate is
+strict by design and has no escape hatch — if it fires repeatedly on
+something that isn't a real problem, calibrate the rules (lower
+severity, narrow the regex, tighten the LLM prompt) rather than
+trying to skip the gate.

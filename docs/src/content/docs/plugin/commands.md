@@ -85,5 +85,6 @@ the session.
 ## See also
 
 - [Skills](/sextant-mcp/plugin/skills/) — auto-loaded behaviour.
-- [Hooks](/sextant-mcp/plugin/hooks/) — automatic grading.
+- [Pre-commit hook](/sextant-mcp/plugin/precommit-hook/) — the
+  commit-time gate.
 - [`sextant grade`](/sextant-mcp/cli/grade/) — the underlying CLI.

@@ -1,9 +1,9 @@
 # Sextant config for the Sextant repo. We dogfood our own grader, so
 # the verdict thresholds are deliberately strict: zero errors, zero
-# warns, zero info. Combined with `SEXTANT_ENFORCE_ON_STOP=1` (set in
-# `.claude/settings.json`), the agent loop must drive every diff to a
-# clean grade before ending its turn, and CI fails the PR on any
-# regression at info or above.
+# warns, zero info. The sample git pre-commit hook
+# (`plugin/hooks/pre-commit.sh`) is the local gate that blocks commits
+# until the diff is clean, and CI fails the PR on any regression at
+# info or above.
 
 [verdict]
 max_errors = 0

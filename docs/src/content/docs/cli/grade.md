@@ -130,8 +130,9 @@ code 1 regardless of `--fail-on` (unless `--fail-on never`).
 sextant grade --diff --working-tree --no-llm
 ```
 
-Sub-second, offline. The Claude Code plugin's `PostToolUse` hook runs
-exactly this.
+Sub-second, offline. The Claude Code plugin's sample git pre-commit
+hook runs exactly this (with `--fail-on warn` so a finding aborts the
+commit).
 
 ### CI on a feature branch
 

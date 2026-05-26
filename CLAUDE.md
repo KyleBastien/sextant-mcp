@@ -38,19 +38,14 @@ cd docs && npm install && npm run dev   # local preview at :4321
 
 Sextant is dogfooded on its own source. **Verdict thresholds in `.sextant/config.toml` are `max_errors = 0`, `max_warns = 0`, `max_info = 0`** — any new finding at info or above blocks the gate.
 
-`.claude/settings.json` wires three hooks:
-- **`SessionStart`** prints loaded rules.
-- **`PostToolUse`** (Edit/Write/MultiEdit) runs `sextant grade --diff --working-tree --no-llm` after every edit and feeds findings back as context. Silent on a clean grade.
-- **`Stop`** runs the same grade. With `SEXTANT_ENFORCE_ON_STOP=1` (set in `.claude/settings.json`), a `request_changes` verdict **blocks turn-end** and feeds findings back as the reason.
+The gate is the **git pre-commit hook** at `plugin/hooks/pre-commit.sh`. Install it locally with `ln -sf ../../plugin/hooks/pre-commit.sh .git/hooks/pre-commit` — `git commit` then fails when the working-tree diff has any finding at warn or above. The plugin no longer ships Claude Code hooks; the agent grades on demand via the MCP server (`grade_diff`, `grade_files`) and the `sextant-grade` / `sextant-self-correct` skills tell it when. Drive every diff to `approve` before committing.
 
-Practical consequence: if you add a finding while editing, the loop will not let you stop until it's clean. Drive every diff to `approve` before ending the turn. The `sextant-self-correct` skill describes the grade → fix → re-grade loop and pass budget.
-
-Escape hatches (use sparingly): `SEXTANT_DISABLE_POST_EDIT=1`, `SEXTANT_DISABLE_STOP=1`, `SEXTANT_DISABLE_SESSION_START=1`.
+The gate has no escape hatch — there is no opt-out env var and the script has no bypass flag. If the gate fires, fix the findings.
 
 **Never silence a finding instead of fixing it.** Sextant has no exemption mechanism by design — there is no `[paths.exclude]` config and no per-rule `exclude_paths` frontmatter; the skip list (generated artifacts: `Cargo.lock`, `target/`, `node_modules/`, `.git/`) is hardcoded into `sextant-config`. When the gate fires, the response is to fix the underlying issue — refactor, drop an unused export, write the missing test, raise visibility, split a too-long file. Specifically forbidden:
 - Lowering thresholds in `.sextant/config.toml` (raising `max_errors`/`max_warns`/`max_info`, or relaxing per-rule limits in `[size]`/`[complexity]`/`[duplication]`) to let a finding through.
 - Editing rule frontmatter to downgrade severity below the threshold.
-- Disabling the post-edit/stop hooks via the escape-hatch env vars to ship without grading.
+- Disabling, bypassing, or skipping the pre-commit gate to ship without grading.
 
 If a rule genuinely doesn't fit a piece of code, the right response is to make the rule smarter (e.g. teach it about a new convention) — not to carve out a hole. The `sextant-engine`'s `lib_tests.rs` extraction from `lib.rs` to stay under the file-length threshold is the model: refactor, don't relax.
 
