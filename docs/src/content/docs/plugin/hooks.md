@@ -1,6 +1,6 @@
 ---
 title: Hooks
-description: SessionStart, PostToolUse, and Stop hooks that wire Sextant into the edit loop.
+description: SessionStart and PostToolUse hooks that wire Sextant into the edit loop, plus a sample git pre-commit hook for the hard gate.
 sidebar:
   order: 4
 ---
@@ -13,9 +13,12 @@ agent having to remember to ask for it.
 |---|---|---|
 | [SessionStart](#sessionstart) | Claude Code session opens. | Prints a one-line summary of loaded rules. |
 | [PostToolUse](#posttooluse) | After Edit / Write / MultiEdit. | Silent `grade_diff` in the background, feeds findings to the agent. |
-| [Stop](#stop) | Before the agent ends its turn. | Final `grade_diff`. Advisory by default; enforcing optionally. |
 
-The hook scripts live at `plugin/hooks/*.sh`.
+The Claude hook scripts live at `plugin/hooks/session-start.sh` and
+`plugin/hooks/post-edit-grade.sh`. The plugin also ships a sample
+**git** pre-commit hook at `plugin/hooks/pre-commit.sh` — see
+[Pre-commit hook](/sextant-mcp/plugin/precommit-hook/) for the hard
+gate that blocks commits on a dirty grade.
 
 ## SessionStart
 
@@ -60,56 +63,30 @@ in the background, so it doesn't block the edit from completing.
 
 Disable: `export SEXTANT_DISABLE_POST_EDIT=1`.
 
-## Stop
+## Why no Stop hook?
 
-Before the agent ends its turn, runs the same `grade_diff` once more.
+Earlier versions of the plugin shipped a `Stop` hook that re-graded
+before the agent ended its turn and could be flipped into a blocking
+guardrail with `SEXTANT_ENFORCE_ON_STOP=1`. That hook is gone:
 
-The behaviour depends on `SEXTANT_ENFORCE_ON_STOP`:
+- Blocking turn-end produced dead-end loops when an LLM rule kept
+  flagging the same line and the agent couldn't make it happy. The
+  fix usually wasn't in the agent's reach.
+- It tried to be a commit gate in the wrong place. `git commit` is the
+  natural integration point for "this diff is not allowed to land" —
+  it's the one the rest of your toolchain already understands.
 
-### Advisory (default)
-
-Surfaces the verdict and findings as context. Doesn't block the stop —
-the agent can volunteer one more pass if it wants.
-
-```text
-[Sextant] verdict: request_changes
-  warn  src/handlers.rs:88  builtin.size.fn-length
-        Function `dispatch` is 78 lines (warn at 60)
-```
-
-The agent reads this on its next turn (which doesn't happen
-automatically, since the user is now in control). If the user prompts
-again, the agent has the findings in context.
-
-### Enforcing
-
-```sh
-export SEXTANT_ENFORCE_ON_STOP=1
-```
-
-A `request_changes` verdict now **blocks** the stop — the hook returns
-a non-zero exit code, the plugin host treats it as a stop reason, and
-the agent gets the findings back as the reason it can't end the turn.
-The agent continues iterating until either:
-
-- The verdict flips to `approve`.
-- The agent gives up (typical models retry up to a few times before
-  surfacing the failure to the user).
-
-This converts Sextant from a code-review companion into a guardrail.
-It also costs more tokens — the agent burns turns fixing findings.
-
-See [Enforcing mode](/sextant-mcp/plugin/enforcing-mode/) for when to
-turn this on.
-
-Disable: `export SEXTANT_DISABLE_STOP=1` (overrides
-`SEXTANT_ENFORCE_ON_STOP`).
+The replacement is the [git pre-commit
+hook](/sextant-mcp/plugin/precommit-hook/) — same `grade_diff` check,
+ran at the right moment, with bypass semantics
+(`git commit --no-verify`) the team already knows.
 
 ## All-or-nothing in the manifest
 
-The plugin manifest lists every hook. To skip individual hooks
-permanently, fork the repo and edit `plugin/manifest.json`. The env-var
-escape hatches are the recommended way for one-off toggling.
+The plugin manifest lists every Claude hook. To skip individual hooks
+permanently, fork the repo and edit `plugin/.claude-plugin/plugin.json`.
+The env-var escape hatches are the recommended way for one-off
+toggling.
 
 ## Disabling all hooks at once
 
@@ -119,8 +96,8 @@ You keep the tools, lose the automation.
 
 ## See also
 
-- [Enforcing mode](/sextant-mcp/plugin/enforcing-mode/) — turn the
-  stop hook into a blocker.
+- [Pre-commit hook](/sextant-mcp/plugin/precommit-hook/) — the hard
+  gate at commit time.
 - [Skills](/sextant-mcp/plugin/skills/) — the agent-side companion to
   hooks.
 - [`sextant grade`](/sextant-mcp/cli/grade/) — what hooks run under

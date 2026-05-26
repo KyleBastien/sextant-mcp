@@ -57,7 +57,8 @@ context=$(printf 'Sextant grade_diff (post-edit): %s — %d errors, %d warnings.
   "$verdict" "$errors" "$warns" "$top")
 
 # `additionalContext` is added to Claude's view; the agent can choose
-# to act on it. We never block the tool call — that's `Stop`'s job.
+# to act on it. We never block the tool call — the hard gate lives in
+# the git pre-commit hook (plugin/hooks/pre-commit.sh).
 printf '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":%s}}\n' \
   "$(jq -Rn --arg s "$context" '$s')"
 

@@ -23,21 +23,7 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/plugin/hooks/stop-enforce-grade.sh",
-            "timeout": 30
-          }
-        ]
-      }
     ]
   },
-  "enableAllProjectMcpServers": true,
-  "env": {
-    "SEXTANT_ENFORCE_ON_STOP": "1"
-  }
+  "enableAllProjectMcpServers": true
 }

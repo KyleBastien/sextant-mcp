@@ -117,8 +117,8 @@ For full installation options (releases, brew, source) see
 ```
 
 The plugin registers the MCP server, three skills, three slash
-commands, and three hooks that grade after every edit and before the
-agent ends its turn. Read the
+commands, and two hooks that grade after every edit — plus a sample
+git pre-commit hook for the hard gate at commit time. Read the
 [plugin guide](https://kylebastien.github.io/sextant-mcp/plugin/) for
 the details.
 

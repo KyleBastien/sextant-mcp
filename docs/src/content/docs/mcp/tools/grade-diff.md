@@ -59,8 +59,9 @@ The text is the JSON-serialized `Report`. Clients should parse it.
 
 - After every meaningful edit, in the inner agent loop.
 - Right before ending a turn, as a final check.
-- The Claude Code plugin's `PostToolUse` and `Stop` hooks call this
-  automatically.
+- The Claude Code plugin's `PostToolUse` hook calls this automatically
+  after every edit, and the sample git pre-commit hook runs the same
+  command at commit time.
 
 When **not** to call it:
 

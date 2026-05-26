@@ -2,8 +2,9 @@
 
 Bundles [Sextant](https://github.com/kylebastien/sextant-mcp) into a
 Claude Code session: the MCP server, three skills the agent
-auto-loads, three slash commands, and three hooks that turn grading
-into a live signal during the edit loop.
+auto-loads, three slash commands, and two hooks that turn grading
+into a live signal during the edit loop — plus a sample git
+pre-commit hook for the hard gate.
 
 ## Install
 
@@ -75,25 +76,75 @@ offline; explicit grades via the slash command can opt back in.
 Skipped automatically when `.sextant/` doesn't exist — new repos
 don't pay the cost on every edit.
 
-#### `Stop`
+### Git pre-commit hook (recommended hard gate)
 
-Before the agent ends its turn, runs the same `grade_diff` once more.
+The plugin no longer ships a Claude Code `Stop` hook. The
+agent's `PostToolUse` feedback is a *soft* signal: useful for
+self-correction during the edit loop, but easy to talk past if you're
+moving fast. The hard gate belongs at `git commit` time, where it can
+block the commit until the diff is clean.
 
-- **Default (advisory):** surface the verdict and findings as
-  context. Don't block stop. The agent can volunteer one more pass.
-- **Enforcing:** set `SEXTANT_ENFORCE_ON_STOP=1` in your shell or
-  Claude Code env. A `request_changes` verdict now *blocks* the stop
-  and feeds the findings back as the reason — Claude continues
-  iterating until the verdict is `approve` or it gives up.
+A sample script lives at `plugin/hooks/pre-commit.sh`. It runs
+`sextant grade --diff --working-tree --no-llm --fail-on warn` and
+exits non-zero on any warn or error — `git commit` aborts when the
+gate fires.
 
-Pick advisory if you want Sextant as a code-review companion;
-enforcing if you want it as a guardrail.
+**Install (symlink from the plugin checkout):**
+
+```bash
+ln -sf ../../plugin/hooks/pre-commit.sh .git/hooks/pre-commit
+```
+
+…or copy it if you'd rather not depend on the symlink:
+
+```bash
+cp plugin/hooks/pre-commit.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+**Install via [husky](https://typicode.github.io/husky/):**
+
+```bash
+npx husky add .husky/pre-commit "sextant grade --diff --working-tree --no-llm --fail-on warn"
+```
+
+**Install via the [pre-commit framework](https://pre-commit.com):**
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: sextant
+        name: sextant
+        entry: sextant grade --diff --working-tree --no-llm --fail-on warn
+        language: system
+        pass_filenames: false
+```
+
+**Tuning:**
+
+- `--fail-on error` — only `error`-severity findings block; warns are
+  advisory.
+- `--fail-on never` — hook prints findings but never blocks. Useful
+  while calibrating new rules.
+- Drop `--no-llm` to include LLM-evaluated rules (slower, needs API
+  keys).
+- `SEXTANT_SKIP_PRECOMMIT=1` short-circuits the script to a no-op when
+  you need to bypass it for a session.
+- `git commit --no-verify` is the per-commit escape hatch — use
+  sparingly.
+
+The post-edit Claude hook still runs during the edit loop, so the
+agent gets feedback long before the commit attempt. The pre-commit
+hook is the safety net that catches anything the agent (or you)
+missed.
 
 ## Disabling pieces
 
 Plugin hooks are all-or-nothing in the manifest, so to skip individual
-hooks rename them inside your fork or set guards inline. The simplest
-escape hatch:
+Claude hooks rename them inside your fork or set guards inline. The
+simplest escape hatch:
 
 ```bash
 # Disable post-edit grading without uninstalling the plugin.
@@ -101,7 +152,8 @@ export SEXTANT_DISABLE_POST_EDIT=1
 ```
 
 (The hook scripts respect that env var as a no-op short-circuit. Same
-pattern for `SEXTANT_DISABLE_STOP=1` and `SEXTANT_DISABLE_SESSION_START=1`.)
+pattern for `SEXTANT_DISABLE_SESSION_START=1` and
+`SEXTANT_SKIP_PRECOMMIT=1` for the git pre-commit hook.)
 
 ## Authoring
 
@@ -128,8 +180,8 @@ behavior — they only speak when there are findings. Run
 commit. The first commit of a repo has no `HEAD~1`; Sextant returns
 a friendly "no default base" error and the hook exits silently.
 
-**Enforce mode blocked stop and the agent is stuck.** Either fix the
-findings or unset `SEXTANT_ENFORCE_ON_STOP` for one turn:
-```bash
-SEXTANT_ENFORCE_ON_STOP=0 claude
-```
+**Pre-commit hook blocked the commit and I need to land something
+dirty.** Bypass once with `git commit --no-verify`, or disable the
+hook for a session with `SEXTANT_SKIP_PRECOMMIT=1`. The post-edit
+Claude hook still runs, so you'll see findings during the next
+session even if you bypass the commit gate.
