@@ -6,9 +6,8 @@ sidebar:
 ---
 
 The fastest way to use Sextant inside [Claude Code](https://claude.ai/code)
-is the bundled plugin — it registers the MCP server, three skills, three
-slash commands, two Claude hooks, and a sample git pre-commit hook in
-one go.
+is the bundled plugin — it registers the MCP server, three skills,
+three slash commands, and a sample git pre-commit hook in one go.
 
 ## Recommended: install the plugin
 

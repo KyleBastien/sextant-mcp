@@ -59,15 +59,14 @@ The text is the JSON-serialized `Report`. Clients should parse it.
 
 - After every meaningful edit, in the inner agent loop.
 - Right before ending a turn, as a final check.
-- The Claude Code plugin's `PostToolUse` hook calls this automatically
-  after every edit, and the sample git pre-commit hook runs the same
-  command at commit time.
+- The Claude Code plugin's sample git pre-commit hook runs the same
+  command at commit time, blocking the commit on a dirty grade.
 
 When **not** to call it:
 
 - During exploration (no edits yet).
 - For docs-only edits in `.md` files where no rules apply.
-- After every keystroke — that's what the hook is for.
+- After every keystroke — wait until you've made a meaningful change.
 
 ## Performance
 

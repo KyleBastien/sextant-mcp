@@ -2,21 +2,26 @@
 title: Pre-commit hook
 description: Use Sextant as a git pre-commit hook to block commits until the diff grades clean.
 sidebar:
-  order: 5
+  order: 4
 ---
 
-The Sextant plugin's [PostToolUse hook](/sextant-mcp/plugin/hooks/#posttooluse)
-surfaces findings to the agent while it's editing — a *soft* signal
-that nudges self-correction. The plugin doesn't ship a Claude `Stop`
-hook anymore (see [Why no Stop hook?](/sextant-mcp/plugin/hooks/#why-no-stop-hook)).
+The Sextant plugin doesn't wire any Claude Code hooks
+(`SessionStart`, `PostToolUse`, `Stop`). Earlier versions did — they
+produced dead-end loops and pushed feedback into the wrong place. The
+right integration point is **`git commit`**: the rest of the toolchain
+already understands the bypass semantics, and the gate runs once per
+commit instead of once per keystroke.
 
-The **hard gate** belongs at `git commit` time. A pre-commit hook runs
-`sextant grade --diff --working-tree` and aborts the commit on any
-finding — your usual `--no-verify` bypass works the way it does for
-every other hook.
+The agent still grades on demand via the MCP server (`grade_diff`,
+`grade_files`) and the `sextant-grade` /
+[`sextant-self-correct`](/sextant-mcp/plugin/skills/#sextant-self-correct)
+skills tell it when. The pre-commit hook catches anything the agent
+(or you) missed.
 
 A sample script ships at `plugin/hooks/pre-commit.sh` in the
-[sextant-mcp repo](https://github.com/kylebastien/sextant-mcp).
+[sextant-mcp repo](https://github.com/kylebastien/sextant-mcp). It
+runs `sextant grade --diff --working-tree` and aborts the commit on
+any finding — `git commit --no-verify` is the standard bypass.
 
 ## What the sample script does
 
@@ -125,7 +130,7 @@ existing debt doesn't gate new work.
 **The hook is too slow.** Make sure `--no-llm` is set. If the wait is
 still too long, profile with `time sextant grade --diff --working-tree`
 and look for an expensive rule. Heavy LLM-evaluated rules belong in
-CI, not in the inner-loop hook.
+CI, not in the commit hook.
 
 **The hook flags lines I didn't touch.** Diff mode filters findings to
 changed lines, but a rule that fires on the *file* (size, complexity,
@@ -141,7 +146,8 @@ committing the report.
 
 ## See also
 
-- [Hooks](/sextant-mcp/plugin/hooks/) — the Claude-side hooks.
+- [Skills](/sextant-mcp/plugin/skills/) — the auto-loaded skills that
+  prompt the agent to grade.
 - [`sextant grade`](/sextant-mcp/cli/grade/) — the underlying
   command.
 - [GitHub Action](/sextant-mcp/action/) — the PR-level gate.

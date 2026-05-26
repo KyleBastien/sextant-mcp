@@ -38,18 +38,14 @@ cd docs && npm install && npm run dev   # local preview at :4321
 
 Sextant is dogfooded on its own source. **Verdict thresholds in `.sextant/config.toml` are `max_errors = 0`, `max_warns = 0`, `max_info = 0`** — any new finding at info or above blocks the gate.
 
-`.claude/settings.json` wires two hooks:
-- **`SessionStart`** prints loaded rules.
-- **`PostToolUse`** (Edit/Write/MultiEdit) runs `sextant grade --diff --working-tree --no-llm` after every edit and feeds findings back as context. Silent on a clean grade.
+The gate is the **git pre-commit hook** at `plugin/hooks/pre-commit.sh`. Install it locally with `ln -sf ../../plugin/hooks/pre-commit.sh .git/hooks/pre-commit` — `git commit` then fails when the working-tree diff has any finding at warn or above. The plugin no longer ships Claude Code hooks; the agent grades on demand via the MCP server (`grade_diff`, `grade_files`) and the `sextant-grade` / `sextant-self-correct` skills tell it when. Drive every diff to `approve` before committing; bypass with `git commit --no-verify` only when you genuinely need to land something dirty.
 
-The hard gate is the **git pre-commit hook** at `plugin/hooks/pre-commit.sh`. Install it locally with `ln -sf ../../plugin/hooks/pre-commit.sh .git/hooks/pre-commit` — `git commit` then fails when the working-tree diff has any finding at warn or above. Drive every diff to `approve` before committing; the `sextant-self-correct` skill describes the grade → fix → re-grade loop and pass budget. Bypass with `git commit --no-verify` only when you genuinely need to land something dirty.
-
-Escape hatches (use sparingly): `SEXTANT_DISABLE_POST_EDIT=1`, `SEXTANT_DISABLE_SESSION_START=1`, `SEXTANT_SKIP_PRECOMMIT=1`.
+Escape hatch (use sparingly): `SEXTANT_SKIP_PRECOMMIT=1` short-circuits the pre-commit hook.
 
 **Never silence a finding instead of fixing it.** Sextant has no exemption mechanism by design — there is no `[paths.exclude]` config and no per-rule `exclude_paths` frontmatter; the skip list (generated artifacts: `Cargo.lock`, `target/`, `node_modules/`, `.git/`) is hardcoded into `sextant-config`. When the gate fires, the response is to fix the underlying issue — refactor, drop an unused export, write the missing test, raise visibility, split a too-long file. Specifically forbidden:
 - Lowering thresholds in `.sextant/config.toml` (raising `max_errors`/`max_warns`/`max_info`, or relaxing per-rule limits in `[size]`/`[complexity]`/`[duplication]`) to let a finding through.
 - Editing rule frontmatter to downgrade severity below the threshold.
-- Disabling the post-edit hook or the pre-commit gate (via escape-hatch env vars or `git commit --no-verify`) to ship without grading.
+- Disabling the pre-commit gate (via `SEXTANT_SKIP_PRECOMMIT=1` or `git commit --no-verify`) to ship without grading.
 
 If a rule genuinely doesn't fit a piece of code, the right response is to make the rule smarter (e.g. teach it about a new convention) — not to carve out a hole. The `sextant-engine`'s `lib_tests.rs` extraction from `lib.rs` to stay under the file-length threshold is the model: refactor, don't relax.
 

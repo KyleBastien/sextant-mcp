@@ -1,8 +1,7 @@
 # Sextant config for the Sextant repo. We dogfood our own grader, so
 # the verdict thresholds are deliberately strict: zero errors, zero
-# warns, zero info. The post-edit hook surfaces findings to the agent
-# during the edit loop; the sample git pre-commit hook
-# (`plugin/hooks/pre-commit.sh`) is the hard gate that blocks commits
+# warns, zero info. The sample git pre-commit hook
+# (`plugin/hooks/pre-commit.sh`) is the local gate that blocks commits
 # until the diff is clean, and CI fails the PR on any regression at
 # info or above.
 
