@@ -32,7 +32,7 @@ any new violation in a `--diff` or `--pr` grade fails the gate.
 |---|---|---|
 | `vendor.typescript.no-any` | `any` in any type position | Use a generic or a precise type. |
 | `vendor.typescript.no-unknown` | `unknown` | **Allowed** in `catch (e: unknown)` only. |
-| `vendor.typescript.no-object-type` | lowercase `object` type | Describe the shape with an interface or `Record<string, T>`. |
+| `vendor.typescript.no-object-type` | lowercase `object` type | Describe the shape with an interface or a typed `Record`. |
 | `vendor.typescript.no-empty-object-type` | `{}` as a type | Outside of an `interface` declaration; the `no-empty-interface` rule covers `interface Foo {}`. |
 | `vendor.typescript.no-branded-types` | `unique symbol` types | Branded / nominal types. Use a tagged record or a class. |
 | `vendor.typescript.no-as-cast` | `x as Foo` | `as const` is allowed (it narrows literals, not the opposite). |
@@ -49,6 +49,7 @@ any new violation in a `--diff` or `--pr` grade fails the gate.
 | `vendor.typescript.no-ambient-module-shim` | `declare module "x" {}` (empty body) | Install `@types/x`, write real `.d.ts`, or use a typed adapter. **Ships native autofix.** |
 | `vendor.typescript.no-empty-type-construction` | `Pick<T, never>`, `Record<never, V>`, `Omit<T, keyof T>` | Spell out the keys or delete the type. |
 | `vendor.typescript.no-implicit-any-field` | `interface User { id; … }`, `class C { count; … }` (no annotation, no initializer) | Always annotate the field type, or give it an initializer the compiler can infer from. |
+| `vendor.typescript.no-property-bags` | open primitive-valued maps (`Record<string, string>`, `{ [k: string]: T }`) | Name the shape, type the value, or use a `Map`. Named-value `Record<string, User>` stays legal. |
 
 Most rules use the [`ast`
 evaluator](/sextant-mcp/concepts/evaluator/#ast--tree-sitter-query),
