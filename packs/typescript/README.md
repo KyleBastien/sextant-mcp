@@ -50,6 +50,7 @@ any new violation in a `--diff`/`--pr` grade fails the gate.
 | `vendor.typescript.no-ambient-module-shim` | empty `declare module "x" {}` shims — **ships native autofix** |
 | `vendor.typescript.no-empty-type-construction` | `Pick<T, never>`, `Record<never, V>`, `Omit<T, keyof T>` |
 | `vendor.typescript.no-implicit-any-field` | interface, type-literal, or class fields without a type annotation |
+| `vendor.typescript.no-property-bags`    | open primitive-valued maps (`Record<string, string>`, `{ [k: string]: T }`) — named-value `Record<string, User>` stays legal |
 
 ## Why these rules cannot be turned off
 

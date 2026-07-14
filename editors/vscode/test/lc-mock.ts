@@ -29,7 +29,7 @@ export interface DocumentFilter {
 
 export interface LanguageClientOptions {
   readonly documentSelector?: readonly DocumentFilter[];
-  readonly initializationOptions?: Readonly<Record<string, boolean>>;
+  readonly initializationOptions?: { readonly disableLlm?: boolean };
   readonly synchronize?: {
     readonly fileEvents?: { dispose(): void };
     readonly configurationSection?: string;

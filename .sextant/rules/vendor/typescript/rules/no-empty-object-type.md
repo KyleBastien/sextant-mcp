@@ -38,9 +38,11 @@ This rule fires on any `{}` in type position. The companion
   ```ts
   type User = { id: string; email: string };
   ```
-- For maps with arbitrary keys, use `Record`:
+- For a map with arbitrary keys and a *named* value type, use `Record`
+  (a primitive-valued `Record<string, string>` is itself banned — see
+  `vendor.typescript.no-property-bags`):
   ```ts
-  type Headers = Record<string, string>;
+  type UsersById = Record<string, User>;
   ```
 - For "must be passed but ignored" (rare), make the type explicit
   about what you'll do with it.

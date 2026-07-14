@@ -1,7 +1,7 @@
 ---
 id: vendor.typescript.no-object-type
 name: "No `object` type"
-description: "Bans the lowercase `object` type. Use a precise interface or `Record<string, T>`."
+description: "Bans the lowercase `object` type. Use a precise interface or a `Record` with a named value type."
 severity: error
 category: reliability
 scope: file
@@ -10,7 +10,7 @@ evaluator:
   type: ast
   query: '((predefined_type) @t (#eq? @t "object"))'
   capture: t
-  message: "no `object` type — describe the shape with an interface or use `Record<string, T>`"
+  message: "no `object` type — describe the shape with an interface or a typed `Record`"
 tags: [strict, types]
 ---
 
@@ -26,9 +26,11 @@ it's a signal that the author didn't yet know what shape the value has
   ```ts
   type User = { id: string; email: string };
   ```
-- For dynamic key/value maps, use `Record`:
+- For a dynamic map, use `Record` with a *named* value type — a
+  primitive-valued `Record<string, string>` is itself banned (see
+  `vendor.typescript.no-property-bags`):
   ```ts
-  type Headers = Record<string, string>;
+  type UsersById = Record<string, User>;
   ```
 - For "either an object or null" (e.g. a function that may return
   nothing structured), spell out the union explicitly.

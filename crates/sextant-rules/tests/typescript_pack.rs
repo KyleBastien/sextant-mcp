@@ -96,4 +96,22 @@ ts_pack_tests! {
         ("a.ts", "const FOO: unique symbol = Symbol(\"foo\");\n", 1);
     no_branded_types_does_not_fire_on_plain_types: "no-branded-types.md" =>
         ("a.ts", "type UserId = { kind: \"user\"; id: string };\n", 0);
+    // Property bags: open-keyed maps with primitive values, and index signatures.
+    no_property_bags_fires_on_record_string_value: "no-property-bags.md" =>
+        ("a.ts", "type H = Record<string, string>;\n", 1);
+    no_property_bags_fires_on_record_boolean_value: "no-property-bags.md" =>
+        ("a.ts", "type F = Record<string, boolean>;\n", 1);
+    no_property_bags_fires_on_record_number_key: "no-property-bags.md" =>
+        ("a.ts", "type L = Record<number, string>;\n", 1);
+    no_property_bags_fires_on_index_signature_string_key: "no-property-bags.md" =>
+        ("a.ts", "interface X { [k: string]: number }\n", 1);
+    no_property_bags_fires_on_index_signature_number_key: "no-property-bags.md" =>
+        ("a.ts", "type Y = { [k: number]: string };\n", 1);
+    // Named / structured values and finite keys are allowed.
+    no_property_bags_allows_named_value: "no-property-bags.md" =>
+        ("a.ts", "type U = Record<string, User>;\n", 0);
+    no_property_bags_allows_finite_key_union: "no-property-bags.md" =>
+        ("a.ts", "type M = Record<\"a\" | \"b\", string>;\n", 0);
+    no_property_bags_allows_mapped_type: "no-property-bags.md" =>
+        ("a.ts", "type P<T> = { [K in keyof T]: string };\n", 0);
 }
