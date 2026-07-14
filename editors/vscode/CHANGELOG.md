@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/KyleBastien/sextant-mcp/compare/vscode-v0.1.4...vscode-v0.1.5) (2026-07-14)
+
+
+### Features
+
+* **typescript:** ban property-bag types ([#51](https://github.com/KyleBastien/sextant-mcp/issues/51)) ([f3535cb](https://github.com/KyleBastien/sextant-mcp/commit/f3535cb8c67a99db6433b7b5c694eca24c476145))
+
 ## [0.1.4](https://github.com/KyleBastien/sextant-mcp/compare/vscode-v0.1.3...vscode-v0.1.4) (2026-05-10)
 
 

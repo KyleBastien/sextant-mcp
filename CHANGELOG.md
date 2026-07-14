@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.18](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.17...v0.1.18) (2026-07-14)
+
+
+### Features
+
+* **typescript:** ban property-bag types ([#51](https://github.com/KyleBastien/sextant-mcp/issues/51)) ([f3535cb](https://github.com/KyleBastien/sextant-mcp/commit/f3535cb8c67a99db6433b7b5c694eca24c476145))
+
 ## [0.1.17](https://github.com/KyleBastien/sextant-mcp/compare/v0.1.16...v0.1.17) (2026-05-26)
 
 
